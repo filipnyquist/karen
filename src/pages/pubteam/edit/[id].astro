@@ -1,0 +1,139 @@
+---
+// src/pages/pubteam/edit/[id].astro
+import BaseLayout from '../../../layouts/BaseLayout.astro';
+import TeamPictureUploader from '../../../islands/TeamPictureUploader';
+import { db } from '../../../db';
+import { pubTeams, pubTeamMembers } from '../../../db/schema';
+import { eq, and } from 'drizzle-orm';
+import { flattenTranslations } from '../../../i18n';
+import { isAdmin } from '../../../api/middleware/auth';
+import { requireAuth } from '../../../lib/guards';
+
+const t = Astro.locals.t;
+const guard = requireAuth(Astro);
+if (guard instanceof Response) return guard;
+const currentUser = guard;
+const teamId = Astro.params.id!;
+
+// Allow site admins or team admins
+let canEdit = false;
+if (currentUser) {
+  if (isAdmin(currentUser.role)) {
+    canEdit = true;
+  } else {
+    const [membership] = await db
+      .select()
+      .from(pubTeamMembers)
+      .where(and(eq(pubTeamMembers.teamId, teamId), eq(pubTeamMembers.userId, currentUser.id)))
+      .limit(1);
+    canEdit = !!membership?.isAdmin;
+  }
+}
+
+if (!canEdit) {
+  return Astro.redirect('/');
+}
+
+const [team] = await db.select().from(pubTeams).where(eq(pubTeams.id, teamId)).limit(1);
+if (!team) {
+  return Astro.redirect('/pubteam/list');
+}
+
+const translations = flattenTranslations(Astro.locals.translations);
+---
+
+<BaseLayout title={t('team.editTeam')}>
+  <div class="space-y-6">
+    <a href={`/pubteam/${teamId}`} class="inline-flex items-center gap-1 text-sm text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200">
+      <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" />
+      </svg>
+      {t('common.back')}
+    </a>
+
+    <h1 class="text-2xl font-bold text-gray-900 dark:text-white">{t('team.editTeam')}</h1>
+
+    <TeamPictureUploader
+      client:load
+      teamId={teamId}
+      currentPic={team.teamPic}
+      teamColor={team.teamColor}
+      teamName={team.name}
+      t={translations}
+    />
+
+    <form id="edit-team-form" class="max-w-lg space-y-4">
+      <div>
+        <label for="name" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+          {t('team.teamName')} *
+        </label>
+        <input
+          type="text"
+          id="name"
+          name="name"
+          required
+          value={team.name}
+          class="w-full rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+        />
+      </div>
+      <div>
+        <label for="description" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+          {t('team.description')}
+        </label>
+        <textarea
+          id="description"
+          name="description"
+          rows={3}
+          class="w-full rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+        >{team.description || ''}</textarea>
+      </div>
+      <div>
+        <label for="teamColor" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+          {t('team.color')}
+        </label>
+        <input
+          type="color"
+          id="teamColor"
+          name="teamColor"
+          value={team.teamColor || '#3B82F6'}
+          class="h-10 w-20 rounded-md border border-gray-300 dark:border-gray-700 cursor-pointer"
+        />
+      </div>
+      <div class="flex gap-3 pt-2">
+        <a href={`/pubteam/${teamId}`} class="px-4 py-2 rounded-md text-sm font-medium border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors">
+          {t('common.cancel')}
+        </a>
+        <button type="submit" class="px-4 py-2 rounded-md bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 transition-colors">
+          {t('common.save')}
+        </button>
+      </div>
+    </form>
+  </div>
+
+  <script define:vars={{ teamId }}>
+    const form = document.getElementById('edit-team-form');
+    form?.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const name = document.getElementById('name').value.trim();
+      const description = document.getElementById('description').value.trim();
+      const teamColor = document.getElementById('teamColor').value;
+
+      try {
+        const res = await fetch(`/api/teams/${teamId}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'same-origin',
+          body: JSON.stringify({ name, description: description || undefined, teamColor }),
+        });
+        if (res.ok) {
+          location.href = `/pubteam/${teamId}`;
+        } else {
+          const data = await res.json();
+          window.appAlert(data.error || 'Failed to update team');
+        }
+      } catch {
+        window.appAlert('Network error');
+      }
+    });
+  </script>
+</BaseLayout>

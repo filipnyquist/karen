@@ -1,0 +1,188 @@
+---
+// src/components/EventCard.astro
+
+interface EventData {
+  id: string;
+  name: string;
+  description: string | null;
+  startDate: Date;
+  endDate: Date;
+  locationName?: string | null;
+  maxGuests: number | null;
+  maxWorkers: number | null;
+  currentWorkers?: number;
+  currentGuests?: number;
+  willOccur?: number;
+  locked?: boolean | null;
+  givesPoints?: boolean | null;
+  stateName?: string | null;
+}
+
+interface Props {
+  event: EventData;
+  t: (key: string) => string;
+}
+
+const { event, t } = Astro.props;
+
+const startDate = new Date(event.startDate);
+const endDate = new Date(event.endDate);
+const isPast = endDate < new Date();
+const lang = Astro.locals.lang ?? 'sv';
+
+function getConfirmedLabel() {
+  if (startDate > new Date()) return t('event.stateUpcoming');
+  if (endDate >= new Date()) return t('event.stateOngoing');
+  return t('event.stateHappened');
+}
+function getConfirmedCls() {
+  if (startDate > new Date()) return 'bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300';
+  if (endDate >= new Date()) return 'bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300';
+  return 'bg-gray-100 text-gray-500 dark:bg-gray-700 dark:text-gray-400';
+}
+const stateLabel =
+  event.willOccur === 1 ? getConfirmedLabel() :
+  event.willOccur === 2 ? t('event.stateNo') :
+  event.willOccur === 3 ? t('event.stateMaybe') : null;
+
+const workerCount = event.currentWorkers ?? 0;
+const guestCount = event.currentGuests ?? 0;
+const isFull = event.maxWorkers !== null && workerCount >= event.maxWorkers;
+
+// Relative date logic
+const dayKeys = ['daySunday', 'dayMonday', 'dayTuesday', 'dayWednesday', 'dayThursday', 'dayFriday', 'daySaturday'];
+
+function getRelativeDateLabel(date: Date, tFn: (key: string) => string): { label: string; sublabel: string } | null {
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const eventDay = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+  const diffMs = eventDay.getTime() - today.getTime();
+  const diffDays = Math.round(diffMs / 86400000);
+
+  if (diffDays < 0) return null;
+
+  const sublabel = date.toLocaleDateString(Astro.locals.lang ?? 'sv', { month: 'short', day: 'numeric' });
+
+  if (diffDays === 0) return { label: tFn('event.today'), sublabel };
+  if (diffDays === 1) return { label: tFn('event.tomorrow'), sublabel };
+
+  const todayDow = today.getDay();
+  const eventDow = eventDay.getDay();
+  const dayName = tFn(`event.${dayKeys[eventDow]}`);
+
+  // Same ISO week → "This Friday"
+  const getISOWeek = (d: Date) => {
+    const tmp = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
+    tmp.setUTCDate(tmp.getUTCDate() + 4 - (tmp.getUTCDay() || 7));
+    const yearStart = new Date(Date.UTC(tmp.getUTCFullYear(), 0, 1));
+    return Math.ceil((((tmp.getTime() - yearStart.getTime()) / 86400000) + 1) / 7);
+  };
+
+  const sameYear = today.getFullYear() === eventDay.getFullYear();
+  const sameWeek = sameYear && getISOWeek(today) === getISOWeek(eventDay);
+
+  if (sameWeek && diffDays <= 6) {
+    return { label: tFn('event.thisDay').replace('{day}', dayName), sublabel };
+  }
+
+  if (diffDays <= 13) {
+    return { label: tFn('event.nextDay').replace('{day}', dayName), sublabel };
+  }
+
+  return null;
+}
+
+const relativeDate = isPast ? null : getRelativeDateLabel(startDate, t);
+const timeStr = startDate.toLocaleTimeString(lang, { hour: '2-digit', minute: '2-digit' });
+const endTimeStr = endDate.toLocaleTimeString(lang, { hour: '2-digit', minute: '2-digit' });
+const fullDateStr = `${startDate.toLocaleDateString(lang, { month: 'short', day: 'numeric' })} ${timeStr} - ${endDate.toLocaleDateString(lang, { month: 'short', day: 'numeric' })} ${endTimeStr}`;
+---
+
+<a href={`/event/${event.id}`}
+   class="block bg-white dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-800 hover:border-blue-400 dark:hover:border-blue-500 hover:shadow-md transition-all group">
+  <div class="p-4 sm:p-5">
+    <div class="flex items-start justify-between gap-3">
+      <div class="min-w-0 flex-1">
+        <h3 class="text-lg font-semibold text-gray-900 dark:text-white group-hover:text-blue-600 dark:group-hover:text-blue-400 truncate">
+          {event.name}
+        </h3>
+        {event.locationName && (
+          <p class="text-sm text-gray-500 dark:text-gray-400 mt-1 flex items-center gap-1">
+            <svg class="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+            </svg>
+            <span class="truncate">{event.locationName}</span>
+          </p>
+        )}
+      </div>
+      <div class="flex flex-col items-end gap-1 shrink-0">
+        {stateLabel && (
+          <span class:list={[
+            'text-xs font-medium px-2 py-0.5 rounded-full',
+            event.willOccur === 1 ? getConfirmedCls() :
+            event.willOccur === 2 ? 'bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-300' :
+            'bg-yellow-100 text-yellow-700 dark:bg-yellow-900 dark:text-yellow-300',
+          ]}>
+            {stateLabel}
+          </span>
+        )}
+        {event.locked && (
+          <span class="text-xs font-medium px-2 py-0.5 rounded-full bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400">
+            {t('event.locked')}
+          </span>
+        )}
+      </div>
+    </div>
+
+    {event.description && (
+      <p class="mt-2 text-sm text-gray-600 dark:text-gray-400 line-clamp-2">
+        {event.description}
+      </p>
+    )}
+
+    <div class="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-gray-500 dark:text-gray-400">
+      <span class="flex items-center gap-1.5">
+        <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+        </svg>
+        {relativeDate ? (
+          <span class="flex flex-col">
+            <span class="font-semibold text-blue-600 dark:text-blue-400">{relativeDate.label}</span>
+            <span class="text-xs text-gray-400 dark:text-gray-500">{relativeDate.sublabel} {timeStr} - {endTimeStr}</span>
+          </span>
+        ) : (
+          <span>
+            {startDate.toLocaleDateString(lang, { month: 'short', day: 'numeric' })}
+            {' '}
+            {timeStr}
+            {' - '}
+            {endDate.toLocaleDateString(lang, { month: 'short', day: 'numeric' })}
+            {' '}
+            {endTimeStr}
+          </span>
+        )}
+      </span>
+    </div>
+
+    <div class="mt-3 flex items-center gap-4 text-xs text-gray-500 dark:text-gray-400">
+      {event.maxWorkers !== null && (
+        <span class:list={['flex items-center gap-1', isFull && 'text-orange-500 dark:text-orange-400']}>
+          <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z" />
+          </svg>
+          {workerCount}/{event.maxWorkers} {t('event.workers')}
+          {isFull && ` (${t('event.full')})`}
+        </span>
+      )}
+      {event.maxGuests !== null && (
+        <span class="flex items-center gap-1">
+          <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197m13.5-9a2.25 2.25 0 11-4.5 0 2.25 2.25 0 014.5 0z" />
+          </svg>
+          {guestCount}/{event.maxGuests} {t('event.guests')}
+        </span>
+      )}
+    </div>
+  </div>
+</a>

@@ -1,0 +1,37 @@
+# Ephemeral PostgreSQL + app for E2E tests
+# Started/stopped automatically by Playwright globalSetup
+# Uses non-default ports to avoid conflict with dev environment
+
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      - POSTGRES_USER=karen
+      - POSTGRES_PASSWORD=karen
+      - POSTGRES_DB=karen
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U karen"]
+      interval: 2s
+      timeout: 3s
+      retries: 10
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    volumes:
+      - .:/app
+      - /app/node_modules
+      - /app/.astro
+    ports:
+      - "4322:4321"
+    environment:
+      - DATABASE_URL=postgresql://karen:karen@db:5432/karen
+      - BASE_URL=http://localhost:4322
+      - SESSION_SECRET=e2e-test-session-secret
+      - DEFAULT_MAX_GUESTS=50
+      - DEFAULT_MAX_GUESTS_PER_USER=3
+      - ENCRYPTION_KEY=0000000000000000000000000000000000000000000000000000000000000000
+    depends_on:
+      db:
+        condition: service_healthy

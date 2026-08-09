@@ -1,0 +1,61 @@
+services:
+  app:
+    build: .
+    ports:
+      - "3000:3000"
+    environment:
+      - DATABASE_URL=postgresql://karen:karen@db:5432/karen
+      - SMTP_HOST=${SMTP_HOST:-}
+      - SMTP_PORT=${SMTP_PORT:-587}
+      - SMTP_USER=${SMTP_USER:-}
+      - SMTP_PASS=${SMTP_PASS:-}
+      - SMTP_FROM=${SMTP_FROM:-noreply@karen.se}
+      - BASE_URL=${BASE_URL:-http://localhost:3000}
+      - SESSION_SECRET=${SESSION_SECRET:-change-me-in-production}
+      - SESSION_MAX_AGE_MS=${SESSION_MAX_AGE_MS:-2592000000}
+      - DEFAULT_MAX_GUESTS=${DEFAULT_MAX_GUESTS:-50}
+      - DEFAULT_MAX_GUESTS_PER_USER=${DEFAULT_MAX_GUESTS_PER_USER:-3}
+      - TURNSTILE_SITEKEY=${TURNSTILE_SITEKEY:-}
+      - TURNSTILE_SECRET=${TURNSTILE_SECRET:-}
+      - UPLOAD_DIR=/app/uploads
+    volumes:
+      - uploads:/app/uploads
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+
+  db:
+    image: postgres:16-alpine
+    environment:
+      - POSTGRES_USER=karen
+      - POSTGRES_PASSWORD=karen
+      - POSTGRES_DB=karen
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U karen"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # Run migrations + seed on first start
+  migrate:
+    build: .
+    environment:
+      - DATABASE_URL=postgresql://karen:karen@db:5432/karen
+    command: ["sh", "-c", "bun db:migrate && bun db:seed"]
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: "no"
+
+volumes:
+  pgdata:
+  uploads:
+
+# Fixed network name so docker-compose.import.yml can join it from any cwd.
+networks:
+  default:
+    name: karen-net

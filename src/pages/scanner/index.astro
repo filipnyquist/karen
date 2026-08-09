@@ -1,0 +1,100 @@
+---
+// src/pages/scanner/index.astro
+import BaseLayout from '../../layouts/BaseLayout.astro';
+import { db } from '../../db';
+import { events, locations } from '../../db/schema';
+import { asc, eq, gte, or, sql } from 'drizzle-orm';
+import { canScanTickets } from '../../services/tickets';
+import { requireAuth } from '../../lib/guards';
+
+const t = Astro.locals.t;
+const guard = requireAuth(Astro);
+if (guard instanceof Response) return guard;
+const currentUser = guard;
+
+// Events that could be scannable: anything from the past two weeks through
+// the future (covers the day-of / day-after scan window for workers).
+const now = new Date();
+const twoWeeksAgo = new Date(now);
+twoWeeksAgo.setDate(twoWeeksAgo.getDate() - 14);
+
+const candidates = await db
+    .select({
+        id: events.id,
+        name: events.name,
+        startDate: events.startDate,
+        endDate: events.endDate,
+        locationId: events.locationId,
+        locationName: locations.name,
+    })
+    .from(events)
+    .innerJoin(locations, eq(events.locationId, locations.id))
+    .where(
+        or(
+            gte(events.endDate, twoWeeksAgo),
+            sql`true`,
+        ),
+    )
+    .orderBy(asc(events.startDate));
+
+// Filter to only events the current user is allowed to scan for
+const scannable = (
+    await Promise.all(
+        candidates.map(async (ev) => {
+            const allowed = await canScanTickets(
+                currentUser.id,
+                currentUser.role,
+                ev.id,
+            );
+            return allowed ? ev : null;
+        }),
+    )
+).filter((ev): ev is NonNullable<typeof ev> => ev !== null);
+---
+
+<BaseLayout title={t('ticket.scannerLanding')}>
+    <div class="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8">
+        <h1 class="text-2xl font-bold text-gray-900 dark:text-white mb-2">
+            {t('ticket.scannerLanding')}
+        </h1>
+        <p class="text-gray-600 dark:text-gray-400 mb-6">
+            {t('ticket.selectEventToScan')}
+        </p>
+
+        {scannable.length === 0 ? (
+            <div class="bg-white dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-800 p-6 text-center">
+                <p class="text-gray-500 dark:text-gray-400">
+                    {t('ticket.noScannableEvents')}
+                </p>
+            </div>
+        ) : (
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                {scannable.map((ev) => (
+                    <a
+                        href={`/scanner/${ev.id}`}
+                        class="block bg-white dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-800 p-4 hover:border-blue-500 dark:hover:border-blue-400 transition-colors"
+                    >
+                        <h2 class="text-lg font-semibold text-gray-900 dark:text-white">
+                            {ev.name}
+                        </h2>
+                        <p class="text-sm text-gray-600 dark:text-gray-400 mt-1">
+                            {new Date(ev.startDate).toLocaleString(
+                                Astro.locals.lang ?? 'sv',
+                                {
+                                    year: 'numeric',
+                                    month: 'short',
+                                    day: 'numeric',
+                                    hour: '2-digit',
+                                    minute: '2-digit',
+                                },
+                            )}
+                        </p>
+                        <p class="text-sm text-gray-500 dark:text-gray-500 mt-1">
+                            {ev.locationName}
+                        </p>
+                    </a>
+                ))}
+            </div>
+        )}
+    </div>
+</BaseLayout>

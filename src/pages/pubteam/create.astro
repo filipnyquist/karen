@@ -1,0 +1,204 @@
+---
+// src/pages/pubteam/create.astro
+import BaseLayout from '../../layouts/BaseLayout.astro';
+import { requireAdmin } from '../../lib/guards';
+
+const t = Astro.locals.t;
+const guard = requireAdmin(Astro);
+if (guard instanceof Response) return guard;
+const currentUser = guard;
+---
+
+<BaseLayout title={t('team.createTeam')}>
+  <div class="space-y-6">
+    <a href="/pubteam/list" class="inline-flex items-center gap-1 text-sm text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200">
+      <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" />
+      </svg>
+      {t('common.back')}
+    </a>
+
+    <h1 class="text-2xl font-bold text-gray-900 dark:text-white">{t('team.createTeam')}</h1>
+
+    <form id="create-team-form" class="max-w-lg space-y-4">
+      <div>
+        <label for="name" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+          {t('team.teamName')} *
+        </label>
+        <input
+          type="text"
+          id="name"
+          name="name"
+          required
+          class="w-full rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+        />
+      </div>
+      <div>
+        <label for="description" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+          {t('team.description')}
+        </label>
+        <textarea
+          id="description"
+          name="description"
+          rows={3}
+          class="w-full rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+        ></textarea>
+      </div>
+      <div>
+        <label for="teamColor" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+          {t('team.color')}
+        </label>
+        <input
+          type="color"
+          id="teamColor"
+          name="teamColor"
+          value="#3B82F6"
+          class="h-10 w-20 rounded-md border border-gray-300 dark:border-gray-700 cursor-pointer"
+        />
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+          {t('team.teamAdmin')}
+        </label>
+        <input
+          type="hidden"
+          id="adminUserId"
+          name="adminUserId"
+          value=""
+        />
+        <div class="relative">
+          <input
+            type="text"
+            id="admin-search"
+            autocomplete="off"
+            placeholder={t('team.searchUsers')}
+            class="w-full rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+          />
+          <div id="admin-selected" class="hidden mt-1 flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+            <span id="admin-selected-name"></span>
+            <button type="button" id="admin-clear" class="text-red-500 hover:text-red-700 text-xs font-medium">✕</button>
+          </div>
+          <ul id="admin-results" class="absolute z-10 mt-1 w-full bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-md shadow-lg max-h-48 overflow-auto hidden"></ul>
+        </div>
+      </div>
+      <div class="flex gap-3 pt-2">
+        <a href="/pubteam/list" class="px-4 py-2 rounded-md text-sm font-medium border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors">
+          {t('common.cancel')}
+        </a>
+        <button type="submit" class="px-4 py-2 rounded-md bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 transition-colors">
+          {t('common.save')}
+        </button>
+      </div>
+    </form>
+  </div>
+
+  <script>
+    const adminSearch = document.getElementById('admin-search') as HTMLInputElement;
+    const adminResults = document.getElementById('admin-results') as HTMLUListElement;
+    const adminUserIdInput = document.getElementById('adminUserId') as HTMLInputElement;
+    const adminSelected = document.getElementById('admin-selected') as HTMLDivElement;
+    const adminSelectedName = document.getElementById('admin-selected-name') as HTMLSpanElement;
+    const adminClear = document.getElementById('admin-clear') as HTMLButtonElement;
+
+    let debounceTimer: ReturnType<typeof setTimeout>;
+
+    adminSearch.addEventListener('input', () => {
+      clearTimeout(debounceTimer);
+      const query = adminSearch.value.trim();
+      if (query.length < 2) {
+        adminResults.classList.add('hidden');
+        return;
+      }
+      debounceTimer = setTimeout(async () => {
+        try {
+          const res = await fetch(`/api/profiles/search/${encodeURIComponent(query)}`, { credentials: 'same-origin' });
+          if (!res.ok) return;
+          const users = await res.json();
+          adminResults.textContent = '';
+          if (users.length === 0) {
+            const emptyLi = document.createElement('li');
+            emptyLi.className = 'px-3 py-2 text-sm text-gray-500';
+            emptyLi.textContent = 'No users found';
+            adminResults.appendChild(emptyLi);
+          } else {
+            for (const u of users) {
+              const li = document.createElement('li');
+              li.className = 'px-3 py-2 text-sm cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center gap-2 text-gray-900 dark:text-white';
+              if (u.profilePic) {
+                const img = document.createElement('img');
+                img.src = u.profilePic;
+                img.className = 'w-6 h-6 rounded-full';
+                li.appendChild(img);
+              } else {
+                const div = document.createElement('div');
+                div.className = 'w-6 h-6 rounded-full bg-gray-300 dark:bg-gray-600';
+                li.appendChild(div);
+              }
+              const nameSpan = document.createElement('span');
+              nameSpan.textContent = u.name || u.nickname || 'Unknown';
+              li.appendChild(nameSpan);
+              if (u.nickname) {
+                const nickSpan = document.createElement('span');
+                nickSpan.className = 'text-gray-400 text-xs';
+                nickSpan.textContent = '@' + u.nickname;
+                li.appendChild(nickSpan);
+              }
+              li.addEventListener('click', () => {
+                adminUserIdInput.value = u.id;
+                adminSearch.value = '';
+                adminSearch.classList.add('hidden');
+                adminResults.classList.add('hidden');
+                adminSelectedName.textContent = u.name || u.nickname || 'Unknown';
+                adminSelected.classList.remove('hidden');
+                adminSelected.classList.add('flex');
+              });
+              adminResults.appendChild(li);
+            }
+          }
+          adminResults.classList.remove('hidden');
+        } catch { /* ignore */ }
+      }, 300);
+    });
+
+    adminClear.addEventListener('click', () => {
+      adminUserIdInput.value = '';
+      adminSearch.value = '';
+      adminSearch.classList.remove('hidden');
+      adminSelected.classList.add('hidden');
+      adminSelected.classList.remove('flex');
+    });
+
+    document.addEventListener('click', (e) => {
+      if (!adminResults.contains(e.target as Node) && e.target !== adminSearch) {
+        adminResults.classList.add('hidden');
+      }
+    });
+
+    const form = document.getElementById('create-team-form') as HTMLFormElement;
+    form?.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const name = (document.getElementById('name') as HTMLInputElement).value.trim();
+      const description = (document.getElementById('description') as HTMLTextAreaElement).value.trim();
+      const teamColor = (document.getElementById('teamColor') as HTMLInputElement).value;
+      const adminUserId = adminUserIdInput.value || undefined;
+
+      try {
+        const res = await fetch('/api/teams', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'same-origin',
+          body: JSON.stringify({ name, description: description || undefined, teamColor, adminUserId }),
+        });
+        if (res.ok) {
+          const team = await res.json();
+          location.href = `/pubteam/${team.id}`;
+        } else {
+          const data = await res.json();
+          window.appAlert(data.error || 'Failed to create team');
+        }
+      } catch {
+        window.appAlert('Network error');
+      }
+    });
+  </script>
+</BaseLayout>

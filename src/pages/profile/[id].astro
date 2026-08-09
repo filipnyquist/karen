@@ -1,0 +1,291 @@
+---
+// src/pages/profile/[id].astro
+import BaseLayout from '../../layouts/BaseLayout.astro';
+import UserAvatar from '../../components/UserAvatar.astro';
+import ColorChip from '../../components/ColorChip.astro';
+import { db } from '../../db';
+import {
+  users, workerRegistrations, events, locations,
+  userEducations, educationTypes, pubTeamMembers, pubTeams,
+  legacyMappings
+} from '../../db/schema';
+import { eq, and, desc, sql, lte } from 'drizzle-orm';
+import { anonymizeName } from '../../utils/anonymize';
+import { isSuperadmin } from '../../api/middleware/auth';
+
+const t = Astro.locals.t;
+const lang = Astro.locals.lang ?? 'sv';
+const currentUser = Astro.locals.user;
+const isAuth = !!currentUser;
+const profileId = Astro.params.id!;
+
+const page = parseInt(Astro.url.searchParams.get('page') ?? '1');
+const workLimit = 10;
+const workOffset = (page - 1) * workLimit;
+
+// Fetch user
+const [profileUser] = await db
+  .select()
+  .from(users)
+  .where(eq(users.id, profileId))
+  .limit(1);
+
+if (!profileUser) {
+  return Astro.redirect('/');
+}
+
+
+// Count total work history for pagination
+const [workCount] = await db
+  .select({ count: sql<number>`count(*)::int` })
+  .from(workerRegistrations)
+  .innerJoin(events, eq(workerRegistrations.eventId, events.id))
+  .where(eq(workerRegistrations.userId, profileId));
+const totalWork = workCount?.count ?? 0;
+const workTotalPages = Math.max(1, Math.ceil(totalWork / workLimit));
+
+// Fetch work history (paginated)
+const workHistory = await db
+  .select({
+    eventId: events.id,
+    eventName: events.name,
+    startDate: events.startDate,
+    endDate: events.endDate,
+    locationName: locations.name,
+    responsible: workerRegistrations.responsible,
+    givesPoints: events.givesPoints,
+  })
+  .from(workerRegistrations)
+  .innerJoin(events, eq(workerRegistrations.eventId, events.id))
+  .innerJoin(locations, eq(events.locationId, locations.id))
+  .where(eq(workerRegistrations.userId, profileId))
+  .orderBy(desc(events.startDate))
+  .limit(workLimit)
+  .offset(workOffset);
+
+// Calculate total points — only events that have actually ended count.
+// `locked` is a sign-up-close flag, not "the event happened", so a
+// pre-locked future event must still be excluded.
+const [scoreResult] = await db
+  .select({ points: sql<number>`count(*)::int` })
+  .from(workerRegistrations)
+  .innerJoin(events, and(
+    eq(workerRegistrations.eventId, events.id),
+    eq(events.givesPoints, true),
+    eq(events.locked, true),
+    lte(events.endDate, new Date()),
+  ))
+  .where(eq(workerRegistrations.userId, profileId))
+  .limit(1);
+
+const totalPoints = scoreResult?.points ?? 0;
+
+// Fetch educations
+const educations = await db
+  .select({
+    name: educationTypes.name,
+    description: educationTypes.description,
+    completedAt: userEducations.completedAt,
+    expiresAt: userEducations.expiresAt,
+  })
+  .from(userEducations)
+  .innerJoin(educationTypes, eq(userEducations.educationTypeId, educationTypes.id))
+  .where(eq(userEducations.userId, profileId));
+
+// Fetch teams
+const teams = await db
+  .select({
+    id: pubTeams.id,
+    name: pubTeams.name,
+    teamColor: pubTeams.teamColor,
+    isAdmin: pubTeamMembers.isAdmin,
+  })
+  .from(pubTeamMembers)
+  .innerJoin(pubTeams, eq(pubTeamMembers.teamId, pubTeams.id))
+  .where(eq(pubTeamMembers.userId, profileId));
+
+const isOwnProfile = currentUser && currentUser.id === profileId;
+---
+
+<BaseLayout title={profileUser.nickname || profileUser.name || t('profile.title')}>
+  <div class="space-y-6">
+    <!-- Profile header -->
+    <div class="bg-white dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-800 p-6">
+      <div class="flex flex-col sm:flex-row items-start gap-4">
+        <!-- Avatar -->
+        <UserAvatar user={profileUser} size="lg" />
+        <div class="flex-1 min-w-0">
+          <div class="flex items-center gap-3">
+            <h1 class="text-2xl font-bold text-gray-900 dark:text-white">
+              {profileUser.nickname || anonymizeName(profileUser.name, isAuth) || t('profile.anonymous')}
+            </h1>
+            {isOwnProfile && (
+              <a href="/profile/edit" class="text-sm text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 font-medium">
+                {t('profile.editProfile')}
+              </a>
+            )}
+          </div>
+          {profileUser.name && profileUser.nickname && (
+            <p class="text-sm text-gray-500 dark:text-gray-400">{anonymizeName(profileUser.name, isAuth)}</p>
+          )}
+          {profileUser.description && (
+            <p class="mt-2 text-sm text-gray-600 dark:text-gray-400">{profileUser.description}</p>
+          )}
+          <div class="mt-2 flex flex-wrap items-center gap-2">
+            <span class="inline-flex items-center gap-1 text-sm font-medium px-3 py-1 rounded-full bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300">
+              {totalPoints} {t('scoreboard.points').toLowerCase()}
+            </span>
+            {profileUser.verified && (
+              <span class="inline-flex items-center gap-1 text-sm font-medium px-3 py-1 rounded-full bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300">
+                {t('auth.verified')}
+              </span>
+            )}
+            {profileUser.role === 'admin' && (
+              <span class="inline-flex items-center gap-1 text-sm font-medium px-3 py-1 rounded-full bg-purple-100 text-purple-700 dark:bg-purple-900 dark:text-purple-300">
+                {t('nav.admin')}
+              </span>
+            )}
+            {isSuperadmin(profileUser.role) && (
+              <span class="inline-flex items-center gap-1 text-sm font-medium px-3 py-1 rounded-full bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-300">
+                {t('admin.roleSuperadmin') || 'Superadmin'}
+              </span>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+
+    {profileUser.isLegacy && (
+      <div class="bg-blue-50 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-800 rounded-lg p-4 flex items-start gap-3">
+        <svg class="w-5 h-5 text-blue-600 dark:text-blue-400 shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+        </svg>
+        <div>
+          <p class="text-sm text-blue-800 dark:text-blue-200">{t('migration.legacyProfileDesc')}</p>
+          {isOwnProfile && (
+            <a href="/migrate" class="text-sm font-medium text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 mt-1 inline-block">
+              {t('migration.claimAccount')} &rarr;
+            </a>
+          )}
+        </div>
+      </div>
+    )}
+
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <!-- Work history -->
+      <div class="bg-white dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-800 p-6">
+        <h2 class="text-lg font-semibold text-gray-900 dark:text-white mb-4">
+          {t('profile.workHistory')}
+        </h2>
+        {workHistory.length === 0 ? (
+          <p class="text-sm text-gray-400 dark:text-gray-500">{t('profile.noWorkHistory')}</p>
+        ) : (
+          <ul class="space-y-3">
+            {workHistory.map((w) => (
+              <li class="flex items-start justify-between gap-2">
+                <div class="min-w-0">
+                  <a href={`/event/${w.eventId}`} class="text-sm font-medium text-gray-900 dark:text-white hover:text-blue-600 dark:hover:text-blue-400">
+                    {w.eventName}
+                  </a>
+                  <p class="text-xs text-gray-500 dark:text-gray-400">
+                    {new Date(w.startDate).toLocaleDateString(lang, { year: 'numeric', month: 'short', day: 'numeric' })}
+                    {w.locationName && ` - ${w.locationName}`}
+                  </p>
+                </div>
+                <div class="flex items-center gap-1 shrink-0">
+                  {w.responsible && (
+                    <span class="text-xs px-2 py-0.5 rounded-full bg-yellow-100 text-yellow-700 dark:bg-yellow-900 dark:text-yellow-300">
+                      {t('event.responsible')}
+                    </span>
+                  )}
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
+        {workTotalPages > 1 && (
+          <nav class="flex justify-center items-center gap-2 pt-4 mt-4 border-t border-gray-100 dark:border-gray-800" aria-label="Pagination">
+            {page > 1 && (
+              <a
+                href={`/profile/${profileId}?page=${page - 1}`}
+                class="px-3 py-2 rounded-md text-sm font-medium text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800 transition-colors"
+              >
+                &larr; {t('common.back')}
+              </a>
+            )}
+            <span class="text-sm text-gray-500 dark:text-gray-400">
+              {page} / {workTotalPages}
+            </span>
+            {page < workTotalPages && (
+              <a
+                href={`/profile/${profileId}?page=${page + 1}`}
+                class="px-3 py-2 rounded-md text-sm font-medium text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800 transition-colors"
+              >
+                &rarr;
+              </a>
+            )}
+          </nav>
+        )}
+      </div>
+
+      <!-- Right column -->
+      <div class="space-y-6">
+        <!-- Educations -->
+        <div class="bg-white dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-800 p-6">
+          <h2 class="text-lg font-semibold text-gray-900 dark:text-white mb-4">
+            {t('profile.educations')}
+          </h2>
+          {educations.length === 0 ? (
+            <p class="text-sm text-gray-400 dark:text-gray-500">-</p>
+          ) : (
+            <ul class="space-y-2">
+              {educations.map((edu) => {
+                const isExpired = edu.expiresAt && new Date() > edu.expiresAt;
+                return (
+                  <li class="flex items-start justify-between gap-2">
+                    <div>
+                      <span class="text-sm font-medium text-gray-700 dark:text-gray-300">{edu.description || edu.name}</span>
+                    </div>
+                    {isExpired ? (
+                      <span class="text-xs px-2 py-0.5 rounded-full bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-300 shrink-0">
+                        {t('admin.expired')}
+                      </span>
+                    ) : (
+                      <span class="text-xs text-gray-400 dark:text-gray-500 shrink-0">
+                        {new Date(edu.completedAt).toLocaleDateString(lang, { year: 'numeric', month: 'short' })}
+                      </span>
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </div>
+
+        <!-- Teams -->
+        {teams.length > 0 && (
+          <div class="bg-white dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-800 p-6">
+            <h2 class="text-lg font-semibold text-gray-900 dark:text-white mb-4">
+              {t('team.title')}
+            </h2>
+            <ul class="space-y-2">
+              {teams.map((team) => (
+                <li class="flex items-center justify-between">
+                  <a href={`/pubteam/${team.id}`} class="flex items-center gap-2 text-sm font-medium text-gray-900 dark:text-white hover:text-blue-600 dark:hover:text-blue-400">
+                    <ColorChip color={team.teamColor} />
+                    {team.name}
+                  </a>
+                  {team.isAdmin && (
+                    <span class="text-xs px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300">
+                      {t('team.teamAdmin')}
+                    </span>
+                  )}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+      </div>
+    </div>
+  </div>
+</BaseLayout>

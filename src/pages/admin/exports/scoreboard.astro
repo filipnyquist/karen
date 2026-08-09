@@ -1,0 +1,170 @@
+---
+// src/pages/admin/exports/scoreboard.astro
+//
+// Admin-only: download a plain-text scoreboard for a chosen semester.
+// The use case is the annual dinner committee — they need a list of
+// everyone who worked X events last semester to send invitations. We
+// surface quick-pick buttons for the 4 most recent completed semesters
+// so the operator doesn't have to know our academic calendar by heart.
+
+import BaseLayout from '../../../layouts/BaseLayout.astro';
+import { getCurrentSemester, type Semester } from '../../../services/scoring';
+import { requireAdmin } from '../../../lib/guards';
+
+const t = Astro.locals.t;
+const guard = requireAdmin(Astro);
+if (guard instanceof Response) return guard;
+const currentUser = guard;
+
+/**
+ * Build the list of the 4 most recent *completed* semesters, walking
+ * backward from the current one. The current semester is excluded so
+ * the operator doesn't accidentally invite people mid-semester.
+ */
+function recentCompletedSemesters(count: number) {
+    const cur = getCurrentSemester();
+    const out: { semester: Semester; year: number }[] = [];
+    let sem: Semester = cur.semester;
+    let year = cur.year;
+    for (let i = 0; i < count; i++) {
+        if (sem === "fall") {
+            sem = "spring";
+            // year unchanged — fall Y → spring Y next
+        } else {
+            sem = "fall";
+            year -= 1;
+        }
+        out.push({ semester: sem, year });
+    }
+    return out;
+}
+
+const quickPicks = recentCompletedSemesters(4);
+
+const labels = {
+    title: t("export.scoreboardTitle") || "Scoreboard export",
+    description:
+        t("export.scoreboardDescription") ||
+        "Download a plain-text scoreboard for a semester. Used by the dinner committee to find everyone who worked enough events to be invited.",
+    semesterLabel: t("export.semesterLabel") || "Semester",
+    yearLabel: t("export.yearLabel") || "Year",
+    minPointsLabel:
+        t("export.minPointsLabel") || "Min. events per user",
+    minPointsHint:
+        t("export.minPointsHint") ||
+        "Only include users who worked at least this many events (default 1).",
+    download: t("export.download") || "Download",
+    quickPicksHeading:
+        t("export.quickPicksHeading") || "Or download a recent semester",
+    quickPicksSubheading:
+        t("export.quickPicksSubheading") ||
+        "Each link downloads everyone (1+ events). For a filtered list (3+, 5+, etc.) use the form above.",
+    fall: t("export.fall") || "Fall",
+    spring: t("export.spring") || "Spring",
+};
+---
+
+<BaseLayout title={labels.title}>
+  <div class="space-y-6 max-w-2xl">
+    <div class="flex items-center gap-3">
+      <a
+        href="/admin"
+        class="inline-flex items-center gap-1 text-sm text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+      >
+        <svg
+          class="w-4 h-4"
+          fill="none"
+          viewBox="0 0 24 24"
+          stroke="currentColor"
+        >
+          <path
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            stroke-width="2"
+            d="M15 19l-7-7 7-7"></path>
+        </svg>
+        {t('common.back') || 'Back'}
+      </a>
+    </div>
+
+    <h1 class="text-2xl font-bold text-gray-900 dark:text-white">
+      {labels.title}
+    </h1>
+    <p class="text-sm text-gray-600 dark:text-gray-400">
+      {labels.description}
+    </p>
+
+    <form
+      method="get"
+      action="/api/admin/exports/scoreboard"
+      class="bg-white dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-800 p-4 space-y-4"
+    >
+      <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <label class="flex flex-col gap-1 text-sm">
+          <span class="text-gray-600 dark:text-gray-400">{labels.semesterLabel}</span>
+          <select
+            name="semester"
+            class="px-3 py-2 rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
+            required
+          >
+            <option value="fall">{labels.fall}</option>
+            <option value="spring">{labels.spring}</option>
+          </select>
+        </label>
+        <label class="flex flex-col gap-1 text-sm">
+          <span class="text-gray-600 dark:text-gray-400">{labels.yearLabel}</span>
+          <input
+            type="number"
+            name="year"
+            min="2000"
+            max="2100"
+            value={new Date().getFullYear()}
+            required
+            class="px-3 py-2 rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
+          />
+        </label>
+        <label class="flex flex-col gap-1 text-sm">
+          <span class="text-gray-600 dark:text-gray-400">{labels.minPointsLabel}</span>
+          <input
+            type="number"
+            name="minPoints"
+            min="1"
+            max="1000"
+            value="1"
+            class="px-3 py-2 rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
+          />
+        </label>
+      </div>
+      <p class="text-xs text-gray-500 dark:text-gray-400">
+        {labels.minPointsHint}
+      </p>
+      <button
+        type="submit"
+        class="px-4 py-2 rounded-md bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 transition-colors"
+      >
+        {labels.download}
+      </button>
+    </form>
+
+    <div class="space-y-2">
+      <h2 class="text-sm font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wider">
+        {labels.quickPicksHeading}
+      </h2>
+      <p class="text-xs text-gray-500 dark:text-gray-400">
+        {labels.quickPicksSubheading}
+      </p>
+      <div class="flex flex-wrap gap-2">
+        {quickPicks.map((qp) => (
+          <a
+            href={`/api/admin/exports/scoreboard?semester=${qp.semester}&year=${qp.year}`}
+            class="px-3 py-2 rounded-md bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 text-sm font-medium hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors"
+          >
+            {(qp.semester === "fall" ? labels.fall : labels.spring) +
+              " " +
+              qp.year}
+          </a>
+        ))}
+      </div>
+    </div>
+  </div>
+</BaseLayout>

@@ -1,0 +1,308 @@
+---
+// src/pages/admin/audit-log.astro
+//
+// Admin-only audit log review. Server-rendered with a direct DB query
+// that joins the users table twice (once for the actor, once for the
+// target) so we can show names/emails instead of raw UUIDs.
+//
+// Filters: ?action=ticket.redeem (exact match), ?limit=N
+// Cursor pagination: ?before=<createdAt-iso>
+
+import BaseLayout from '../../layouts/BaseLayout.astro';
+import { alias } from 'drizzle-orm/pg-core';
+import { and, desc, eq, lt } from 'drizzle-orm';
+import { db } from '../../db';
+import { auditLog, users } from '../../db/schema';
+import { requireSuperadmin } from '../../lib/guards';
+
+const t = Astro.locals.t;
+const guard = requireSuperadmin(Astro);
+if (guard instanceof Response) return guard;
+const currentUser = guard;
+
+const actionFilter = Astro.url.searchParams.get('action') ?? '';
+const limitParam = parseInt(Astro.url.searchParams.get('limit') ?? '50', 10);
+const limit = Math.min(
+    Math.max(Number.isFinite(limitParam) ? limitParam : 50, 10),
+    500,
+);
+const beforeParam = Astro.url.searchParams.get('before');
+
+// Two aliases on the users table — one for the actor, one for the
+// target. The target may be NULL (e.g. ticket.issue.bulk), hence LEFT JOIN.
+const actor = alias(users, 'actor');
+const target = alias(users, 'target');
+
+const filters = [];
+if (actionFilter) filters.push(eq(auditLog.action, actionFilter));
+if (beforeParam) {
+    const beforeDate = new Date(beforeParam);
+    if (!Number.isNaN(beforeDate.getTime())) {
+        filters.push(lt(auditLog.createdAt, beforeDate));
+    }
+}
+
+const rows = await db
+    .select({
+        id: auditLog.id,
+        action: auditLog.action,
+        actorId: auditLog.actorId,
+        actorEmail: actor.email,
+        actorName: actor.name,
+        targetUserId: auditLog.targetUserId,
+        targetEmail: target.email,
+        targetName: target.name,
+        oldValue: auditLog.oldValue,
+        newValue: auditLog.newValue,
+        createdAt: auditLog.createdAt,
+    })
+    .from(auditLog)
+    .leftJoin(actor, eq(actor.id, auditLog.actorId))
+    .leftJoin(target, eq(target.id, auditLog.targetUserId))
+    .where(filters.length > 0 ? and(...filters) : undefined)
+    .orderBy(desc(auditLog.createdAt))
+    .limit(limit + 1); // +1 to detect "has more"
+
+const hasMore = rows.length > limit;
+const entries = rows.slice(0, limit);
+const oldestCreatedAt =
+    entries.length > 0
+        ? (entries[entries.length - 1].createdAt as Date).toISOString()
+        : null;
+
+/** Format an audit payload as a short human-readable diff. */
+function formatValue(value: string | null): string {
+    if (value === null) return "—";
+    try {
+        const parsed = JSON.parse(value);
+        if (parsed === null || parsed === undefined) return "—";
+        if (typeof parsed === "object") {
+            return JSON.stringify(parsed);
+        }
+        return String(parsed);
+    } catch {
+        return value;
+    }
+}
+
+/** Compact "old → new" diff for the typical {key: value} payloads. */
+function formatDiff(
+    oldVal: string | null,
+    newVal: string | null,
+): string {
+    const o = formatValue(oldVal);
+    const n = formatValue(newVal);
+    if (o === "—" && n === "—") return "—";
+    if (o === "—") return n;
+    if (n === "—") return o;
+    if (o === n) return o;
+    return `${o} → ${n}`;
+}
+---
+
+<BaseLayout title={t("admin.auditLog")}>
+    <div class="space-y-6">
+        <div class="flex items-center gap-3">
+            <a
+                href="/admin"
+                class="inline-flex items-center gap-1 text-sm text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+            >
+                <svg
+                    class="w-4 h-4"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    stroke="currentColor"
+                >
+                    <path
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        stroke-width="2"
+                        d="M15 19l-7-7 7-7"></path>
+                </svg>
+                {t("common.back")}
+            </a>
+        </div>
+
+        <h1 class="text-2xl font-bold text-gray-900 dark:text-white">
+            {t("admin.auditLog")}
+        </h1>
+
+        <form
+            method="get"
+            action="/admin/audit-log"
+            class="flex flex-wrap items-end gap-3 bg-white dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-800 p-4"
+        >
+            <label class="flex flex-col gap-1 text-sm">
+                <span class="text-gray-600 dark:text-gray-400"
+                    >{t("admin.filterByAction")}</span
+                >
+                <input
+                    type="search"
+                    name="action"
+                    value={actionFilter}
+                    placeholder="ticket.redeem"
+                    class="px-3 py-2 rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white min-w-64"
+                />
+            </label>
+            <label class="flex flex-col gap-1 text-sm">
+                <span class="text-gray-600 dark:text-gray-400"
+                    >{t("admin.limit")}</span
+                >
+                <select
+                    name="limit"
+                    class="px-3 py-2 rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
+                >
+                    {[25, 50, 100, 200, 500].map((n) => (
+                        <option
+                            value={n}
+                            selected={n === limit ? undefined : false}
+                        >
+                            {n}
+                        </option>
+                    ))}
+                </select>
+            </label>
+            <button
+                type="submit"
+                class="px-4 py-2 rounded-md bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 transition-colors"
+            >
+                {t("common.filter")}
+            </button>
+            {(actionFilter || beforeParam) && (
+                <a
+                    href="/admin/audit-log"
+                    class="px-4 py-2 rounded-md bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 text-sm font-medium hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors"
+                >
+                    {t("common.clear")}
+                </a>
+            )}
+        </form>
+
+        <div
+            class="bg-white dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-800 overflow-hidden"
+        >
+            {entries.length === 0 ? (
+                <p class="p-6 text-center text-gray-500 dark:text-gray-400">
+                    {t("admin.noEntries")}
+                </p>
+            ) : (
+                <div class="overflow-x-auto">
+                    <table class="w-full text-sm">
+                        <thead
+                            class="bg-gray-50 dark:bg-gray-800/50 text-gray-600 dark:text-gray-400"
+                        >
+                            <tr>
+                                <th class="px-4 py-2 text-left font-medium"
+                                    >{t("admin.when")}</th
+                                >
+                                <th class="px-4 py-2 text-left font-medium"
+                                    >{t("admin.who")}</th
+                                >
+                                <th class="px-4 py-2 text-left font-medium"
+                                    >{t("admin.action")}</th
+                                >
+                                <th class="px-4 py-2 text-left font-medium"
+                                    >{t("admin.target")}</th
+                                >
+                                <th class="px-4 py-2 text-left font-medium"
+                                    >{t("admin.details")}</th
+                                >
+                            </tr>
+                        </thead>
+                        <tbody
+                            class="divide-y divide-gray-100 dark:divide-gray-800"
+                        >
+                            {entries.map((row) => (
+                                <tr class="hover:bg-gray-50 dark:hover:bg-gray-800/30">
+                                    <td
+                                        class="px-4 py-2 align-top text-gray-600 dark:text-gray-400 whitespace-nowrap"
+                                    >
+                                        <time
+                                            datetime={(row.createdAt as Date).toISOString()}
+                                            title={(row.createdAt as Date).toLocaleString(
+                                                Astro.locals.lang ?? "sv",
+                                            )}
+                                        >
+                                            {(
+                                                row.createdAt as Date
+                                            ).toLocaleString(
+                                                Astro.locals.lang ?? "sv",
+                                                {
+                                                    month: "short",
+                                                    day: "numeric",
+                                                    hour: "2-digit",
+                                                    minute: "2-digit",
+                                                },
+                                            )}
+                                        </time>
+                                    </td>
+                                    <td class="px-4 py-2 align-top">
+                                        <div
+                                            class="font-medium text-gray-900 dark:text-white"
+                                        >
+                                            {row.actorName ?? row.actorEmail ?? row.actorId.slice(0, 8)}
+                                        </div>
+                                        <div
+                                            class="text-xs text-gray-500 dark:text-gray-400"
+                                        >
+                                            {row.actorEmail ?? "—"}
+                                        </div>
+                                    </td>
+                                    <td class="px-4 py-2 align-top">
+                                        <code
+                                            class="px-2 py-0.5 rounded bg-gray-100 dark:bg-gray-800 text-xs"
+                                            >{row.action}</code
+                                        >
+                                    </td>
+                                    <td class="px-4 py-2 align-top">
+                                        {row.targetUserId ? (
+                                            <>
+                                                <div
+                                                    class="font-medium text-gray-900 dark:text-white"
+                                                >
+                                                    {row.targetName ?? row.targetEmail ?? row.targetUserId.slice(0, 8)}
+                                                </div>
+                                                <div
+                                                    class="text-xs text-gray-500 dark:text-gray-400"
+                                                >
+                                                    {row.targetEmail ?? "—"}
+                                                </div>
+                                            </>
+                                        ) : (
+                                            <span
+                                                class="text-gray-400 dark:text-gray-600"
+                                                >—</span
+                                            >
+                                        )}
+                                    </td>
+                                    <td
+                                        class="px-4 py-2 align-top font-mono text-xs text-gray-700 dark:text-gray-300 break-all"
+                                    >
+                                        {formatDiff(row.oldValue, row.newValue)}
+                                    </td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                </div>
+            )}
+        </div>
+
+        {
+            hasMore && oldestCreatedAt && (
+                <div class="flex justify-end">
+                    <a
+                        href={`/admin/audit-log?action=${encodeURIComponent(
+                            actionFilter,
+                        )}&limit=${limit}&before=${encodeURIComponent(
+                            oldestCreatedAt,
+                        )}`}
+                        class="px-4 py-2 rounded-md bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 text-sm font-medium hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors"
+                    >
+                        {t("common.next")}
+                    </a>
+                </div>
+            )
+        }
+    </div>
+</BaseLayout>

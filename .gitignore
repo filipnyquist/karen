@@ -1,0 +1,59 @@
+# dependencies (bun install)
+node_modules
+
+# output
+out
+dist
+*.tgz
+
+# code coverage
+coverage
+*.lcov
+
+# logs
+logs
+_.log
+report.[0-9]_.[0-9]_.[0-9]_.[0-9]_.json
+
+# dotenv environment variable files
+.env
+.env.development.local
+.env.test.local
+.env.production.local
+.env.local
+
+# caches
+.eslintcache
+.cache
+*.tsbuildinfo
+
+# IntelliJ based IDEs
+.idea
+
+# Finder (MacOS) folder config
+.DS_Store
+
+# Astro cache
+.astro/
+
+# Playwright
+/test-results/
+/playwright-report/
+/blob-report/
+/playwright/.cache/
+
+# User uploads
+uploads/
+
+# E2E secrets file (generated test-user passwords, mode 0600)
+uploads/.e2e-secrets
+
+# SQL dumps
+karen_dump.sql
+*.sql
+
+# Agent debug artifacts
+.playwright-mcp/
+
+# Claude Code runtime state
+.claude/

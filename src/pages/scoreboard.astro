@@ -1,0 +1,162 @@
+---
+// src/pages/scoreboard.astro
+import BaseLayout from '../layouts/BaseLayout.astro';
+import UserAvatar from '../components/UserAvatar.astro';
+import { db } from '../db';
+import { workerRegistrations, events, users } from '../db/schema';
+import { eq, sql, desc, and, gte, lte } from 'drizzle-orm';
+import { anonymizeName } from '../utils/anonymize';
+import { getCurrentSemester } from '../services/scoring';
+
+const t = Astro.locals.t;
+const lang = Astro.locals.lang ?? 'sv';
+const currentUser = Astro.locals.user;
+const isAuth = !!currentUser;
+
+const semesterStart = getCurrentSemester().start;
+
+// Top 10 this semester — only count events that have already ended; future
+// signups don't earn points until the event actually happens.
+const semesterScores = await db
+  .select({
+    userId: workerRegistrations.userId,
+    userName: users.name,
+    userNickname: users.nickname,
+    userProfilePic: users.profilePic,
+    points: sql<number>`count(*)::int`,
+  })
+  .from(workerRegistrations)
+  .innerJoin(users, eq(workerRegistrations.userId, users.id))
+  .innerJoin(events, eq(workerRegistrations.eventId, events.id))
+  .where(
+    and(
+      gte(events.startDate, semesterStart),
+      eq(events.givesPoints, true),
+      lte(events.endDate, new Date()),
+    )
+  )
+  .groupBy(workerRegistrations.userId, users.name, users.nickname, users.profilePic)
+  .orderBy(desc(sql`count(*)::int`))
+  .limit(10);
+
+// Top 10 all-time — same "ended" requirement as the semester board.
+const allTimeScores = await db
+  .select({
+    userId: workerRegistrations.userId,
+    userName: users.name,
+    userNickname: users.nickname,
+    userProfilePic: users.profilePic,
+    points: sql<number>`count(*)::int`,
+  })
+  .from(workerRegistrations)
+  .innerJoin(users, eq(workerRegistrations.userId, users.id))
+  .innerJoin(events, eq(workerRegistrations.eventId, events.id))
+  .where(and(eq(events.givesPoints, true), lte(events.endDate, new Date())))
+  .groupBy(workerRegistrations.userId, users.name, users.nickname, users.profilePic)
+  .orderBy(desc(sql`count(*)::int`))
+  .limit(10);
+---
+
+<BaseLayout title={t('scoreboard.title')}>
+  <div class="space-y-6">
+    <h1 class="text-2xl font-bold text-gray-900 dark:text-white">
+      {t('scoreboard.title')}
+    </h1>
+
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <!-- All-time top 10 -->
+      <div class="bg-white dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-800 overflow-hidden">
+        <div class="px-4 py-3 border-b border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-800/50">
+          <h2 class="text-sm font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wider">
+            {t('scoreboard.top10AllTime')}
+          </h2>
+        </div>
+        <table class="w-full">
+          <thead>
+            <tr class="border-b border-gray-200 dark:border-gray-800">
+              <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-400 w-12">
+                {t('scoreboard.rank')}
+              </th>
+              <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-400">
+                {t('scoreboard.name')}
+              </th>
+              <th class="px-4 py-2 text-right text-xs font-medium text-gray-500 dark:text-gray-400 w-20">
+                {t('scoreboard.points')}
+              </th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-gray-100 dark:divide-gray-800">
+            {allTimeScores.length === 0 ? (
+              <tr><td colspan="3" class="px-4 py-6 text-center text-sm text-gray-400">-</td></tr>
+            ) : allTimeScores.map((entry, i) => (
+              <tr class="hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors">
+                <td class="px-4 py-2.5 text-sm">
+                  {i === 0 ? <span class="text-lg">&#127942;</span>
+                   : i === 1 ? <span class="text-lg">&#129352;</span>
+                   : i === 2 ? <span class="text-lg">&#129353;</span>
+                   : <span class="text-gray-500 dark:text-gray-400 font-medium">{i + 1}</span>}
+                </td>
+                <td class="px-4 py-2.5">
+                  <a href={`/profile/${entry.userId}`} class="flex items-center gap-2 text-sm font-medium text-gray-900 dark:text-white hover:text-blue-600 dark:hover:text-blue-400">
+                    <UserAvatar user={{ nickname: entry.userNickname, name: entry.userName, profilePic: entry.userProfilePic }} size="xs" />
+                    {entry.userNickname || anonymizeName(entry.userName, isAuth) || 'Unknown'}
+                  </a>
+                </td>
+                <td class="px-4 py-2.5 text-right">
+                  <span class="text-sm font-semibold text-gray-900 dark:text-white">{entry.points}</span>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Semester top 10 -->
+      <div class="bg-white dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-800 overflow-hidden">
+        <div class="px-4 py-3 border-b border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-800/50">
+          <h2 class="text-sm font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wider">
+            {t('scoreboard.top10Semester')}
+          </h2>
+        </div>
+        <table class="w-full">
+          <thead>
+            <tr class="border-b border-gray-200 dark:border-gray-800">
+              <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-400 w-12">
+                {t('scoreboard.rank')}
+              </th>
+              <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-400">
+                {t('scoreboard.name')}
+              </th>
+              <th class="px-4 py-2 text-right text-xs font-medium text-gray-500 dark:text-gray-400 w-20">
+                {t('scoreboard.points')}
+              </th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-gray-100 dark:divide-gray-800">
+            {semesterScores.length === 0 ? (
+              <tr><td colspan="3" class="px-4 py-6 text-center text-sm text-gray-400">-</td></tr>
+            ) : semesterScores.map((entry, i) => (
+              <tr class="hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors">
+                <td class="px-4 py-2.5 text-sm">
+                  {i === 0 ? <span class="text-lg">&#127942;</span>
+                   : i === 1 ? <span class="text-lg">&#129352;</span>
+                   : i === 2 ? <span class="text-lg">&#129353;</span>
+                   : <span class="text-gray-500 dark:text-gray-400 font-medium">{i + 1}</span>}
+                </td>
+                <td class="px-4 py-2.5">
+                  <a href={`/profile/${entry.userId}`} class="flex items-center gap-2 text-sm font-medium text-gray-900 dark:text-white hover:text-blue-600 dark:hover:text-blue-400">
+                    <UserAvatar user={{ nickname: entry.userNickname, name: entry.userName, profilePic: entry.userProfilePic }} size="xs" />
+                    {entry.userNickname || anonymizeName(entry.userName, isAuth) || 'Unknown'}
+                  </a>
+                </td>
+                <td class="px-4 py-2.5 text-right">
+                  <span class="text-sm font-semibold text-gray-900 dark:text-white">{entry.points}</span>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</BaseLayout>

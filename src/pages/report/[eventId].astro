@@ -1,0 +1,60 @@
+---
+// src/pages/report/[eventId].astro
+import BaseLayout from '../../layouts/BaseLayout.astro';
+import ReportEditor from '../../islands/ReportEditor';
+import { flattenTranslations } from '../../i18n/index';
+import { db } from '../../db';
+import { events, reports, locations, workerRegistrations, users } from '../../db/schema';
+import { eq } from 'drizzle-orm';
+import { requireAuth } from '../../lib/guards';
+
+const t = Astro.locals.t;
+const guard = requireAuth(Astro);
+if (guard instanceof Response) return guard;
+const currentUser = guard;
+const eventId = Astro.params.eventId!;
+
+// Fetch event
+const [eventResult] = await db
+  .select({
+    event: events,
+    locationName: locations.name,
+  })
+  .from(events)
+  .innerJoin(locations, eq(events.locationId, locations.id))
+  .where(eq(events.id, eventId))
+  .limit(1);
+
+if (!eventResult) {
+  return Astro.redirect('/event/list');
+}
+
+const event = eventResult.event;
+
+// Fetch existing report (if any)
+const [existingReport] = await db
+  .select()
+  .from(reports)
+  .where(eq(reports.eventId, eventId))
+  .limit(1);
+
+// Fetch workers for this event
+const workers = await db
+  .select({
+    nickname: users.nickname,
+    name: users.name,
+  })
+  .from(workerRegistrations)
+  .innerJoin(users, eq(workerRegistrations.userId, users.id))
+  .where(eq(workerRegistrations.eventId, eventId));
+
+const translations = flattenTranslations(Astro.locals.translations as unknown as Record<string, unknown>);
+---
+
+<BaseLayout title={`${t('report.title')} - ${event.name}`}>
+  <div class="space-y-4 max-w-5xl mx-auto">
+    <div class="bg-white dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-800 overflow-hidden" style="height: calc(100vh - 8rem);">
+      <ReportEditor client:load eventId={eventId} initialReport={existingReport ? { whoWorked: existingReport.whoWorked, summary: existingReport.summary, needToResupply: existingReport.needToResupply, economy: existingReport.economy, other: existingReport.other } : null} workers={workers} t={translations} />
+    </div>
+  </div>
+</BaseLayout>

@@ -1,0 +1,214 @@
+---
+// src/pages/index.astro
+import BaseLayout from '../layouts/BaseLayout.astro';
+import EventCard from '../components/EventCard.astro';
+import headerImg from '../styles/header.webp';
+import { db } from '../db';
+import { events, locations, eventStates, workerRegistrations, guestRegistrations, legacyMappings } from '../db/schema';
+import { eq, desc, gt, sql } from 'drizzle-orm';
+
+const t = Astro.locals.t;
+const user = Astro.locals.user;
+
+// Check if user should see migration prompt
+let showMigrationPrompt = false;
+if (user && !user.seenMigrationPrompt) {
+  const [existingMigration] = await db.select().from(legacyMappings)
+    .where(eq(legacyMappings.realUserId, user.id))
+    .limit(1);
+  showMigrationPrompt = !existingMigration;
+}
+
+// Fetch upcoming events with location and state
+const now = new Date();
+const upcomingEvents = await db
+  .select({
+    id: events.id,
+    name: events.name,
+    description: events.description,
+    startDate: events.startDate,
+    endDate: events.endDate,
+    maxGuests: events.maxGuests,
+    maxWorkers: events.maxWorkers,
+    locationName: locations.name,
+    willOccur: events.willOccur,
+    locked: events.locked,
+    givesPoints: events.givesPoints,
+  })
+  .from(events)
+  .innerJoin(locations, eq(events.locationId, locations.id))
+  .where(gt(events.startDate, now))
+  .orderBy(events.startDate)
+  .limit(6);
+
+// Get counts for each event
+const eventsWithCounts = await Promise.all(
+  upcomingEvents.map(async (event) => {
+    const [workerCount] = await db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(workerRegistrations)
+      .where(eq(workerRegistrations.eventId, event.id));
+    const [guestCount] = await db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(guestRegistrations)
+      .where(eq(guestRegistrations.eventId, event.id));
+    return {
+      ...event,
+      currentWorkers: workerCount.count,
+      currentGuests: guestCount.count,
+    };
+  })
+);
+---
+
+<BaseLayout title={t('nav.home')}>
+  <div class="space-y-8">
+    <!-- Hero section -->
+    <section class="relative rounded-lg overflow-hidden">
+      <img src={headerImg.src} alt="" class="absolute inset-0 w-full h-full object-cover" />
+      <div class="absolute inset-0 bg-black/40" />
+      <div class="relative text-center py-16 sm:py-24 px-6">
+        <h1 class="text-4xl sm:text-5xl font-bold text-white drop-shadow-lg">
+          {t('site.title')}
+        </h1>
+        <p class="mt-3 text-lg text-white/80 drop-shadow">
+          {t('site.subtitle')}
+        </p>
+      </div>
+    </section>
+
+    {showMigrationPrompt && (
+      <div id="migration-banner" class="bg-blue-50 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-800 rounded-lg p-4 flex items-center justify-between gap-4">
+        <div>
+          <p class="text-blue-700 dark:text-blue-300 font-medium">{t('migration.welcomeNew')}</p>
+          <p class="text-blue-600 dark:text-blue-400 text-sm mt-1">{t('migration.welcomeNewDesc')}</p>
+        </div>
+        <div class="flex items-center gap-2 shrink-0">
+          <a href="/migrate" class="px-4 py-2 rounded-md bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 transition-colors">
+            {t('migration.claimAccount')}
+          </a>
+          <button id="dismiss-migration" class="p-2 rounded-md hover:bg-blue-100 dark:hover:bg-blue-800 text-blue-400 hover:text-blue-600 dark:hover:text-blue-300 transition-colors">
+            <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+      </div>
+      <script>
+        document.getElementById('dismiss-migration')?.addEventListener('click', async () => {
+          await fetch('/api/auth/dismiss-migration-prompt', { method: 'POST', credentials: 'same-origin' });
+          document.getElementById('migration-banner')?.remove();
+        });
+      </script>
+    )}
+
+    {user && !user.verified && (
+      <div class="bg-amber-50 dark:bg-amber-900/30 border border-amber-200 dark:border-amber-800 rounded-lg p-4 flex items-start gap-3">
+        <svg class="w-5 h-5 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z" />
+        </svg>
+        <div class="flex-1">
+          <p class="text-amber-800 dark:text-amber-200 font-medium">{t('auth.verifyBannerTitle')}</p>
+          <p class="text-amber-700 dark:text-amber-300 text-sm mt-1">{t('auth.verifyBannerDesc')}</p>
+          <a href="/verify" class="inline-block mt-3 px-4 py-2 rounded-md bg-amber-600 text-white text-sm font-medium hover:bg-amber-700 transition-colors">
+            {t('auth.verifyBannerCta')}
+          </a>
+        </div>
+      </div>
+    )}
+
+    <!-- Upcoming events -->
+    <section>
+      <div class="flex items-center justify-between mb-6">
+        <h2 class="text-2xl font-bold text-gray-900 dark:text-white">
+          {t('event.events')}
+        </h2>
+        <a href="/event/list" class="text-sm font-medium text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300">
+          {t('nav.events')} &rarr;
+        </a>
+      </div>
+
+      {eventsWithCounts.length === 0 ? (
+        <div class="text-center py-12 bg-white dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-800">
+          <p class="text-gray-500 dark:text-gray-400">{t('event.noEvents')}</p>
+        </div>
+      ) : (
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          {eventsWithCounts.map((event) => (
+            <EventCard event={event} t={t} />
+          ))}
+        </div>
+      )}
+    </section>
+
+    <!-- How-it-works cards -->
+    <section class="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <a
+        href="/scoreboard"
+        class="block bg-white dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-800 p-6 hover:border-blue-400 dark:hover:border-blue-500 transition-colors group"
+      >
+        <div class="flex items-start gap-3">
+          <div class="shrink-0 w-10 h-10 rounded-lg bg-yellow-100 dark:bg-yellow-900/30 flex items-center justify-center text-yellow-700 dark:text-yellow-300">
+            <svg
+              class="w-6 h-6"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+              stroke-width="2"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                d="M8 21h8m-4-4v4M5 4h14v3a4 4 0 01-4 4H9a4 4 0 01-4-4V4zM7 11h10v3a5 5 0 01-10 0v-3z"
+              />
+            </svg>
+          </div>
+          <div class="flex-1 min-w-0">
+            <h3 class="font-semibold text-gray-900 dark:text-white">
+              {t('home.toplistTitle')}
+            </h3>
+            <p class="mt-1 text-sm text-gray-600 dark:text-gray-400">
+              {t('home.toplistBody')}
+            </p>
+            <p class="mt-3 text-sm font-medium text-blue-600 dark:text-blue-400 group-hover:underline">
+              {t('home.toplistCta')} →
+            </p>
+          </div>
+        </div>
+      </a>
+      <a
+        href="/pubteam/list"
+        class="block bg-white dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-800 p-6 hover:border-blue-400 dark:hover:border-blue-500 transition-colors group"
+      >
+        <div class="flex items-start gap-3">
+          <div class="shrink-0 w-10 h-10 rounded-lg bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center text-blue-700 dark:text-blue-300">
+            <svg
+              class="w-6 h-6"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+              stroke-width="2"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                d="M16 11a4 4 0 11-8 0 4 4 0 018 0zM4 21v-1a8 8 0 0116 0v1H4z"
+              />
+            </svg>
+          </div>
+          <div class="flex-1 min-w-0">
+            <h3 class="font-semibold text-gray-900 dark:text-white">
+              {t('home.teamsTitle')}
+            </h3>
+            <p class="mt-1 text-sm text-gray-600 dark:text-gray-400">
+              {t('home.teamsBody')}
+            </p>
+            <p class="mt-3 text-sm font-medium text-blue-600 dark:text-blue-400 group-hover:underline">
+              {t('home.teamsCta')} →
+            </p>
+          </div>
+        </div>
+      </a>
+    </section>
+  </div>
+</BaseLayout>

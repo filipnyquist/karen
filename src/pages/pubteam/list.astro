@@ -1,0 +1,123 @@
+---
+// src/pages/pubteam/list.astro
+import BaseLayout from '../../layouts/BaseLayout.astro';
+import { getTeamScoreboard } from '../../services/teamScoring';
+import { isAdmin } from '../../api/middleware/auth';
+
+const t = Astro.locals.t;
+const currentUser = Astro.locals.user;
+
+const allTeams = await getTeamScoreboard();
+const topTeams = allTeams.slice(0, 5);
+---
+
+<BaseLayout title={t('team.title')}>
+  <div class="space-y-8">
+    <div class="flex items-center justify-between">
+      <h1 class="text-2xl font-bold text-gray-900 dark:text-white">
+        {t('team.title')}
+      </h1>
+      {currentUser && isAdmin(currentUser.role) && (
+        <a href="/pubteam/create" class="px-4 py-2 rounded-md text-sm font-medium bg-blue-600 text-white hover:bg-blue-700 transition-colors shrink-0">
+          + {t('team.createTeam')}
+        </a>
+      )}
+    </div>
+
+    {topTeams.length > 0 && (
+      <div class="bg-white dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-800 p-6">
+        <h2 class="text-lg font-semibold text-gray-900 dark:text-white mb-4">
+          {t('team.topTeams')}
+        </h2>
+        <div class="space-y-3">
+          {topTeams.map((team, i) => (
+            <a
+              href={`/pubteam/${team.id}`}
+              class="flex items-center gap-4 p-3 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors group"
+            >
+              <span class={`text-lg font-bold w-6 text-center ${i === 0 ? 'text-yellow-500' : i === 1 ? 'text-gray-400' : i === 2 ? 'text-amber-600' : 'text-gray-500'}`}>
+                {i + 1}
+              </span>
+              {team.teamPic ? (
+                <img src={team.teamPic} alt={team.name} class="w-10 h-10 rounded-full object-cover shrink-0" />
+              ) : team.teamColor ? (
+                <span class="w-10 h-10 rounded-full shrink-0 border-2 border-white dark:border-gray-700 shadow-sm" style={`background-color: ${team.teamColor}`}></span>
+              ) : (
+                <span class="w-10 h-10 rounded-full shrink-0 bg-gray-200 dark:bg-gray-700 flex items-center justify-center text-sm font-bold text-gray-500 dark:text-gray-400">
+                  {team.name[0].toUpperCase()}
+                </span>
+              )}
+              <div class="flex-1 min-w-0">
+                <span class="font-medium text-gray-900 dark:text-white group-hover:text-blue-600 dark:group-hover:text-blue-400 truncate block">
+                  {team.name}
+                </span>
+                <span class="text-sm text-gray-500 dark:text-gray-400">
+                  {team.memberCount} {team.memberCount === 1 ? t('team.member').toLowerCase() : t('team.members').toLowerCase()}
+                </span>
+              </div>
+              <span class="text-lg font-bold text-blue-600 dark:text-blue-400">
+                {team.points} {t('team.points').toLowerCase()}
+              </span>
+            </a>
+          ))}
+        </div>
+        <p class="text-xs text-gray-400 dark:text-gray-500 mt-4">
+          {t('team.teamScoreExplanation')}
+        </p>
+      </div>
+    )}
+
+    {allTeams.length === 0 ? (
+      <div class="text-center py-12 bg-white dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-800">
+        <p class="text-gray-500 dark:text-gray-400">{t('team.noTeamsYet')}</p>
+      </div>
+    ) : (
+      <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+        {allTeams.map((team) => (
+          <a
+            href={`/pubteam/${team.id}`}
+            class="block bg-white dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-800 hover:border-blue-400 dark:hover:border-blue-500 hover:shadow-md transition-all group"
+          >
+            <div class="p-5">
+              <div class="flex items-start gap-3">
+                {team.teamPic ? (
+                  <img src={team.teamPic} alt={team.name} class="w-10 h-10 rounded-full object-cover shrink-0" />
+                ) : team.teamColor ? (
+                  <span class="w-10 h-10 rounded-full shrink-0 border-2 border-white dark:border-gray-800 shadow-sm" style={`background-color: ${team.teamColor}`}></span>
+                ) : (
+                  <span class="w-10 h-10 rounded-full shrink-0 bg-gray-200 dark:bg-gray-700 flex items-center justify-center text-sm font-bold text-gray-500 dark:text-gray-400">
+                    {team.name[0].toUpperCase()}
+                  </span>
+                )}
+                <div class="min-w-0 flex-1">
+                  <h3 class="text-lg font-semibold text-gray-900 dark:text-white group-hover:text-blue-600 dark:group-hover:text-blue-400 truncate">
+                    {team.name}
+                  </h3>
+                  {team.description && (
+                    <p class="text-sm text-gray-500 dark:text-gray-400 line-clamp-2 mt-1">
+                      {team.description}
+                    </p>
+                  )}
+                </div>
+              </div>
+              <div class="mt-3 flex items-center gap-4 text-sm text-gray-500 dark:text-gray-400">
+                <span class="flex items-center gap-1">
+                  <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z" />
+                  </svg>
+                  {team.memberCount} {team.memberCount === 1 ? t('team.member').toLowerCase() : t('team.members').toLowerCase()}
+                </span>
+                <span class="flex items-center gap-1 font-medium text-blue-600 dark:text-blue-400">
+                  <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z" />
+                  </svg>
+                  {team.points} {t('team.points').toLowerCase()}
+                </span>
+              </div>
+            </div>
+          </a>
+        ))}
+      </div>
+    )}
+  </div>
+</BaseLayout>

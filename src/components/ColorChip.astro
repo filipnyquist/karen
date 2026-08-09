@@ -1,0 +1,42 @@
+---
+// src/components/ColorChip.astro
+//
+// A small colored circle used to represent team color.
+// Uses an inline CSS custom property so the color value isn't interpolated
+// into a CSS property that browsers will accept arbitrary values for.
+
+interface Props {
+    color: string | null;
+    size?: "xs" | "sm" | "md";
+    class?: string;
+}
+
+const { color, size = "sm", class: className = "" } = Astro.props;
+
+const sizeClasses = {
+    xs: "w-2 h-2",
+    sm: "w-3 h-3",
+    md: "w-4 h-4",
+}[size];
+---
+
+{color ? (
+    <span
+        class:list={[
+            "rounded-full inline-block shrink-0",
+            sizeClasses,
+            className,
+        ]}
+        style={`background-color: ${color}`}
+        aria-hidden="true"
+    />
+) : (
+    <span
+        class:list={[
+            "rounded-full inline-block shrink-0 bg-gray-300 dark:bg-gray-600",
+            sizeClasses,
+            className,
+        ]}
+        aria-hidden="true"
+    />
+)}
