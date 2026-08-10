@@ -47,6 +47,16 @@ const translations = flattenTranslations(Astro.locals.translations as unknown as
           {t('admin.auditLog')}
         </a>
       )}
+      {currentUserIsSuperadmin && (
+        <a href="/admin/locations" class="px-4 py-2 rounded-md bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 text-sm font-medium hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors">
+          {t('admin.locations.title')}
+        </a>
+      )}
+      {currentUserIsSuperadmin && (
+        <a href="/admin/education-types" class="px-4 py-2 rounded-md bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 text-sm font-medium hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors">
+          {t('admin.educationTypes.title')}
+        </a>
+      )}
       <a href="/admin/exports/scoreboard" class="px-4 py-2 rounded-md bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 text-sm font-medium hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors">
         {t('export.scoreboardButton') || 'Scoreboard export'}
       </a>

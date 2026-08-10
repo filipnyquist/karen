@@ -321,6 +321,12 @@ export default {
         failedToPostComment: "Failed to post comment",
         failedToDeleteComment: "Failed to delete comment",
         unknown: "Unknown",
+        search: "Search…",
+        created: "Created",
+        updated: "Updated",
+        deleted: "Deleted",
+        saveFailed: "Save failed",
+        deleteFailed: "Delete failed",
     },
     modal: {
         ok: "OK",
@@ -390,6 +396,35 @@ export default {
         noEntries: "No audit entries yet",
         filterByAction: "Filter by action (e.g. ticket.redeem)",
         limit: "Limit",
+        rowsShown: "{count} rows shown",
+        confirmDelete: "Delete {name}?",
+        table: {
+            name: "Name",
+            description: "Description",
+            validityMonths: "Validity (months)",
+            actions: "Actions",
+            validityMonthsHelp: "0–120, or empty for no expiry",
+            empty: "No rows",
+        },
+        locations: {
+            title: "Locations",
+            addButton: "Add location",
+            modal: {
+                createTitle: "Add location",
+                editTitle: "Edit location",
+            },
+        },
+        educationTypes: {
+            title: "Education types",
+            addButton: "Add education type",
+            modal: {
+                createTitle: "Add education type",
+                editTitle: "Edit education type",
+            },
+        },
+    },
+    validation: {
+        nameRequired: "Name is required",
     },
     migration: {
         title: "Migrate old account",

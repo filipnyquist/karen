@@ -7,18 +7,315 @@ import {
     auditLog,
     educationTypes,
     events,
+    locations,
     tickets,
     userEducations,
     users,
 } from "../../db/schema";
 import { recordAdminAction } from "../../services/auditLog";
-import { adminDerive, isSuperadmin } from "../middleware/auth";
+import {
+    adminDerive,
+    isSuperadmin,
+    superadminDerive,
+} from "../middleware/auth";
 import { AppError } from "../middleware/error";
 import { exportRoutes } from "./exports";
+
+// Body validation for /reference-data endpoints. Kept here so the schemas
+// live next to the routes that use them.
+const locationBody = t.Object({
+    name: t.String({ minLength: 1, maxLength: 100 }),
+    description: t.Optional(t.String({ maxLength: 500 })),
+});
+const educationTypeBody = t.Object({
+    name: t.String({ minLength: 1, maxLength: 100 }),
+    description: t.Optional(t.String({ maxLength: 500 })),
+    validityMonths: t.Optional(
+        t.Union([t.Null(), t.Integer({ minimum: 0, maximum: 120 })]),
+    ),
+});
+const idParams = t.Object({ id: t.String() });
+
+// Translate Postgres SQLSTATE codes thrown by the postgres-js driver into
+// the project's AppError shape. Reference data is short-lived and the
+// caller is one form away, so we don't bother with a generic middleware.
+// Drizzle wraps the underlying PostgresError in a DrizzleQueryError; the
+// original is reachable via `.cause`, so we look at both surfaces.
+function isPgErrorWithCode(err: unknown, code: string): boolean {
+    if (typeof err !== "object" || err === null) return false;
+    if ("code" in err && (err as { code: unknown }).code === code) return true;
+    const cause = (err as { cause?: unknown }).cause;
+    if (
+        cause &&
+        typeof cause === "object" &&
+        "code" in cause &&
+        (cause as { code: unknown }).code === code
+    ) {
+        return true;
+    }
+    return false;
+}
+
+// Superadmin-only CRUD for the small "system reference data" tables
+// (locations and education_types). Strictly above admin: these define
+// the lookup lists the rest of the app hardcodes into dropdowns, so
+// mistakes are immediately visible. Mounted from adminRoutes so the
+// combined URL is /api/admin/reference-data/...
+export const referenceDataRoutes = new Elysia({ prefix: "/reference-data" })
+    .derive(superadminDerive)
+    // ─── locations ───
+    .get("/locations", async () => {
+        return db.select().from(locations).orderBy(locations.name);
+    })
+    .post(
+        "/locations",
+        async ({ body, user: actor }) => {
+            const name = body.name.trim();
+            const description = body.description?.trim() || null;
+            try {
+                const [row] = await db
+                    .insert(locations)
+                    .values({ name, description })
+                    .returning();
+                await recordAdminAction(
+                    actor.id,
+                    "reference.location.create",
+                    null,
+                    { newValue: row },
+                );
+                return row;
+            } catch (err) {
+                if (isPgErrorWithCode(err, "23505")) {
+                    throw new AppError(
+                        "A location with this name already exists",
+                        409,
+                        "LOCATION_NAME_TAKEN",
+                    );
+                }
+                throw err;
+            }
+        },
+        { body: locationBody },
+    )
+    .put(
+        "/locations/:id",
+        async ({ body, params, user: actor }) => {
+            const id = parseInt(params.id, 10);
+            if (Number.isNaN(id)) {
+                throw new AppError("Invalid id", 400, "INVALID_ID");
+            }
+            const [existing] = await db
+                .select()
+                .from(locations)
+                .where(eq(locations.id, id))
+                .limit(1);
+            if (!existing) {
+                throw new AppError(
+                    "Location not found",
+                    404,
+                    "LOCATION_NOT_FOUND",
+                );
+            }
+            const name = body.name.trim();
+            const description = body.description?.trim() || null;
+            try {
+                const [row] = await db
+                    .update(locations)
+                    .set({ name, description })
+                    .where(eq(locations.id, id))
+                    .returning();
+                await recordAdminAction(
+                    actor.id,
+                    "reference.location.update",
+                    null,
+                    { oldValue: existing, newValue: row },
+                );
+                return row;
+            } catch (err) {
+                if (isPgErrorWithCode(err, "23505")) {
+                    throw new AppError(
+                        "A location with this name already exists",
+                        409,
+                        "LOCATION_NAME_TAKEN",
+                    );
+                }
+                throw err;
+            }
+        },
+        { body: locationBody, params: idParams },
+    )
+    .delete(
+        "/locations/:id",
+        async ({ params, user: actor }) => {
+            const id = parseInt(params.id, 10);
+            if (Number.isNaN(id)) {
+                throw new AppError("Invalid id", 400, "INVALID_ID");
+            }
+            const [existing] = await db
+                .select()
+                .from(locations)
+                .where(eq(locations.id, id))
+                .limit(1);
+            if (!existing) {
+                throw new AppError(
+                    "Location not found",
+                    404,
+                    "LOCATION_NOT_FOUND",
+                );
+            }
+            try {
+                await db.delete(locations).where(eq(locations.id, id));
+            } catch (err) {
+                if (isPgErrorWithCode(err, "23503")) {
+                    throw new AppError(
+                        "Location is in use by one or more events",
+                        409,
+                        "LOCATION_IN_USE",
+                    );
+                }
+                throw err;
+            }
+            await recordAdminAction(
+                actor.id,
+                "reference.location.delete",
+                null,
+                { oldValue: existing },
+            );
+            return { success: true };
+        },
+        { params: idParams },
+    )
+    // ─── education types ───
+    .get("/education-types", async () => {
+        return db.select().from(educationTypes).orderBy(educationTypes.name);
+    })
+    .post(
+        "/education-types",
+        async ({ body, user: actor }) => {
+            const name = body.name.trim();
+            const description = body.description?.trim() || null;
+            const validityMonths = body.validityMonths ?? null;
+            try {
+                const [row] = await db
+                    .insert(educationTypes)
+                    .values({ name, description, validityMonths })
+                    .returning();
+                await recordAdminAction(
+                    actor.id,
+                    "reference.education_type.create",
+                    null,
+                    { newValue: row },
+                );
+                return row;
+            } catch (err) {
+                if (isPgErrorWithCode(err, "23505")) {
+                    throw new AppError(
+                        "An education type with this name already exists",
+                        409,
+                        "EDUCATION_TYPE_NAME_TAKEN",
+                    );
+                }
+                throw err;
+            }
+        },
+        { body: educationTypeBody },
+    )
+    .put(
+        "/education-types/:id",
+        async ({ body, params, user: actor }) => {
+            const id = parseInt(params.id, 10);
+            if (Number.isNaN(id)) {
+                throw new AppError("Invalid id", 400, "INVALID_ID");
+            }
+            const [existing] = await db
+                .select()
+                .from(educationTypes)
+                .where(eq(educationTypes.id, id))
+                .limit(1);
+            if (!existing) {
+                throw new AppError(
+                    "Education type not found",
+                    404,
+                    "EDUCATION_TYPE_NOT_FOUND",
+                );
+            }
+            const name = body.name.trim();
+            const description = body.description?.trim() || null;
+            const validityMonths = body.validityMonths ?? null;
+            try {
+                const [row] = await db
+                    .update(educationTypes)
+                    .set({ name, description, validityMonths })
+                    .where(eq(educationTypes.id, id))
+                    .returning();
+                await recordAdminAction(
+                    actor.id,
+                    "reference.education_type.update",
+                    null,
+                    { oldValue: existing, newValue: row },
+                );
+                return row;
+            } catch (err) {
+                if (isPgErrorWithCode(err, "23505")) {
+                    throw new AppError(
+                        "An education type with this name already exists",
+                        409,
+                        "EDUCATION_TYPE_NAME_TAKEN",
+                    );
+                }
+                throw err;
+            }
+        },
+        { body: educationTypeBody, params: idParams },
+    )
+    .delete(
+        "/education-types/:id",
+        async ({ params, user: actor }) => {
+            const id = parseInt(params.id, 10);
+            if (Number.isNaN(id)) {
+                throw new AppError("Invalid id", 400, "INVALID_ID");
+            }
+            const [existing] = await db
+                .select()
+                .from(educationTypes)
+                .where(eq(educationTypes.id, id))
+                .limit(1);
+            if (!existing) {
+                throw new AppError(
+                    "Education type not found",
+                    404,
+                    "EDUCATION_TYPE_NOT_FOUND",
+                );
+            }
+            try {
+                await db
+                    .delete(educationTypes)
+                    .where(eq(educationTypes.id, id));
+            } catch (err) {
+                if (isPgErrorWithCode(err, "23503")) {
+                    throw new AppError(
+                        "Education type is in use by one or more user educations",
+                        409,
+                        "EDUCATION_TYPE_IN_USE",
+                    );
+                }
+                throw err;
+            }
+            await recordAdminAction(
+                actor.id,
+                "reference.education_type.delete",
+                null,
+                { oldValue: existing },
+            );
+            return { success: true };
+        },
+        { params: idParams },
+    );
 
 export const adminRoutes = new Elysia({ prefix: "/admin" })
     .derive(adminDerive)
     .use(exportRoutes)
+    .use(referenceDataRoutes)
     .post(
         "/verify",
         async ({ body, user: actor }) => {

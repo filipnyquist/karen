@@ -132,7 +132,7 @@ export const userEducations = pgTable(
 
 export const locations = pgTable("locations", {
     id: serial("id").primaryKey(),
-    name: text("name").notNull(),
+    name: text("name").notNull().unique(),
     description: text("description"),
 });
 
@@ -561,6 +561,7 @@ export type Ticket = typeof tickets.$inferSelect;
 export type PubTeam = typeof pubTeams.$inferSelect;
 export type Report = typeof reports.$inferSelect;
 export type Comment = typeof comments.$inferSelect;
+export type Location = typeof locations.$inferSelect;
 export type EducationType = typeof educationTypes.$inferSelect;
 export type UserEducation = typeof userEducations.$inferSelect;
 export type LegacyMapping = typeof legacyMappings.$inferSelect;

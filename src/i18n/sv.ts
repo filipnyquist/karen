@@ -324,6 +324,12 @@ export default {
         failedToPostComment: "Kunde inte publicera kommentar",
         failedToDeleteComment: "Kunde inte ta bort kommentar",
         unknown: "Okänd",
+        search: "Sök…",
+        created: "Skapad",
+        updated: "Uppdaterad",
+        deleted: "Borttagen",
+        saveFailed: "Kunde inte spara",
+        deleteFailed: "Kunde inte ta bort",
     },
     modal: {
         ok: "OK",
@@ -394,6 +400,35 @@ export default {
         noEntries: "Inga granskningsposter ännu",
         filterByAction: "Filtrera på åtgärd (t.ex. ticket.redeem)",
         limit: "Antal",
+        rowsShown: "{count} rader visas",
+        confirmDelete: "Ta bort {name}?",
+        table: {
+            name: "Namn",
+            description: "Beskrivning",
+            validityMonths: "Giltighet (månader)",
+            actions: "Åtgärder",
+            validityMonthsHelp: "0–120, eller tomt för ingen utgång",
+            empty: "Inga rader",
+        },
+        locations: {
+            title: "Platser",
+            addButton: "Lägg till plats",
+            modal: {
+                createTitle: "Lägg till plats",
+                editTitle: "Redigera plats",
+            },
+        },
+        educationTypes: {
+            title: "Utbildningstyper",
+            addButton: "Lägg till utbildningstyp",
+            modal: {
+                createTitle: "Lägg till utbildningstyp",
+                editTitle: "Redigera utbildningstyp",
+            },
+        },
+    },
+    validation: {
+        nameRequired: "Namn krävs",
     },
     migration: {
         title: "Migrera gammalt konto",

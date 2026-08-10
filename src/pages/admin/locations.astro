@@ -1,0 +1,68 @@
+---
+// src/pages/admin/locations.astro
+//
+// Superadmin-only CRUD for event locations. The actual JSON endpoints
+// live at /api/admin/reference-data/locations (superadmin-gated), and
+// the ReferenceDataTable island handles create/edit/delete in the
+// browser. Here we just guard, hydrate initial rows, and frame the page.
+
+import BaseLayout from '../../layouts/BaseLayout.astro';
+import ReferenceDataTable from '../../islands/ReferenceDataTable';
+import { db } from '../../db';
+import { locations } from '../../db/schema';
+import { requireSuperadmin } from '../../lib/guards';
+import { flattenTranslations } from '../../i18n/index';
+
+const t = Astro.locals.t;
+const guard = requireSuperadmin(Astro);
+if (guard instanceof Response) return guard;
+
+const rows = await db
+    .select({
+        id: locations.id,
+        name: locations.name,
+        description: locations.description,
+    })
+    .from(locations)
+    .orderBy(locations.name);
+
+const translations = flattenTranslations(
+    Astro.locals.translations as unknown as Record<string, unknown>,
+);
+---
+
+<BaseLayout title={t('admin.locations.title')}>
+    <div class="space-y-6">
+        <div class="flex items-center gap-3">
+            <a
+                href="/admin"
+                class="inline-flex items-center gap-1 text-sm text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+            >
+                <svg
+                    class="w-4 h-4"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    stroke="currentColor"
+                >
+                    <path
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        stroke-width="2"
+                        d="M15 19l-7-7 7-7"></path>
+                </svg>
+                {t('common.back')}
+            </a>
+        </div>
+
+        <h1 class="text-2xl font-bold text-gray-900 dark:text-white">
+            {t('admin.locations.title')}
+        </h1>
+
+        <ReferenceDataTable
+            client:load
+            kind="location"
+            initialRows={rows}
+            t={translations}
+        />
+    </div>
+</BaseLayout>

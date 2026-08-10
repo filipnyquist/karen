@@ -22,7 +22,13 @@ export type AuditAction =
     | "ticket.revoke"
     | "ticket.redeem"
     | "ticket.scan.denied"
-    | "scoreboard.export";
+    | "scoreboard.export"
+    | "reference.location.create"
+    | "reference.location.update"
+    | "reference.location.delete"
+    | "reference.education_type.create"
+    | "reference.education_type.update"
+    | "reference.education_type.delete";
 
 export interface AuditPayload {
     oldValue?: unknown;
