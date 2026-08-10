@@ -28,6 +28,14 @@ const currentUser = Astro.locals.user;
 const isAuth = !!currentUser;
 const eventId = Astro.params.id!;
 
+// events.id is uuid. A non-UUID path segment would otherwise throw
+// "invalid input syntax for type uuid" from the postgres driver and
+// surface as 500 instead of the intended 302 to /event/list.
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+if (!UUID_RE.test(eventId)) {
+  return Astro.redirect('/event/list');
+}
+
 // Fetch event with location
 const [eventResult] = await db
   .select({
