@@ -48,6 +48,11 @@ services:
   # Run migrations + seed on first start
   migrate:
     build: .
+    # Reads ADMIN_PASSWORD + SUPERADMIN_PASSWORD from .env (required by
+    # src/db/seed.ts via src/config.ts:67-68). DATABASE_URL is set
+    # explicitly below and overrides anything in .env.
+    env_file:
+      - .env
     # Same DATABASE_SSL rationale as app — see comment above.
     environment:
       - DATABASE_URL=postgresql://karen:karen@db:5432/karen
