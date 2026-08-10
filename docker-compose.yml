@@ -22,6 +22,7 @@ services:
       - DEFAULT_MAX_GUESTS_PER_USER=${DEFAULT_MAX_GUESTS_PER_USER:-3}
       - TURNSTILE_SITEKEY=${TURNSTILE_SITEKEY:-}
       - TURNSTILE_SECRET=${TURNSTILE_SECRET:-}
+      - ENCRYPTION_KEY=${ENCRYPTION_KEY:-}
       - UPLOAD_DIR=/app/uploads
     volumes:
       - uploads:/app/uploads
