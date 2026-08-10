@@ -92,8 +92,8 @@ export default function EventWorkersPanel({
                     {t["event.noWorkers"]}
                 </p>
             ) : (
-                <div class="overflow-x-auto">
-                    <table class="w-full text-sm">
+                <div>
+                    <table class="w-full text-sm table-fixed">
                         <thead class="bg-gray-50 dark:bg-gray-800">
                             <tr>
                                 <th class="px-4 py-2.5 text-left font-medium text-gray-500 dark:text-gray-400" />
@@ -136,15 +136,15 @@ export default function EventWorkersPanel({
                                             )}
                                         </a>
                                     </td>
-                                    <td class="px-4 py-2.5">
+                                    <td class="px-4 py-2.5 max-w-0">
                                         <a
                                             href={`/profile/${w.id}`}
-                                            class="text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 font-medium"
+                                            class="block truncate text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 font-medium"
                                         >
                                             {w.nickname ?? "-"}
                                         </a>
                                     </td>
-                                    <td class="px-4 py-2.5 text-gray-700 dark:text-gray-300">
+                                    <td class="px-4 py-2.5 text-gray-700 dark:text-gray-300 max-w-0 truncate">
                                         {w.name ?? "-"}
                                     </td>
                                     <td class="px-4 py-2.5">

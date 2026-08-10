@@ -79,7 +79,7 @@ export default {
         registerAsResponsible: "Sign up as responsible",
         responsible: "Responsible",
         roles: "Roles",
-        pubWorker: "Pub Worker",
+        pubWorker: "Pub education",
         aas: "AAS (Alcohol serving)",
         workers: "Workers",
         removeWorker: "Remove worker",

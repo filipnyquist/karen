@@ -660,28 +660,18 @@ Astro.csp?.insertScriptHash(sha256ScriptHash(eventScript));
     />
 
     <!-- Comments section — polled via /api/events/:id/comments -->
-    <EventCommentsPanel
-      client:load
-      eventId={eventId}
-      initialComments={initialComments}
-      currentUserId={currentUser?.id ?? null}
-      responsibleUserIds={Array.from(responsibleUserIds)}
-      canPost={!!currentUser}
-      canDelete={isAdmin(currentUser?.role ?? null)}
-      t={translations}
-    />
-
-    <!-- Report button (opens modal) -->
-    {isCurrentUserAdminOrResponsible && (
-      <div class="flex items-center gap-3">
-        <button
-          id="open-report-modal-btn"
-          class="text-sm font-medium px-4 py-2 rounded-md bg-purple-100 text-purple-700 hover:bg-purple-200 dark:bg-purple-900 dark:text-purple-300 dark:hover:bg-purple-800 transition-colors"
-        >
-          {t('report.title')} {reportResult ? `✓` : ''}
-        </button>
-      </div>
-    )}
+    <div class="mt-4">
+      <EventCommentsPanel
+        client:load
+        eventId={eventId}
+        initialComments={initialComments}
+        currentUserId={currentUser?.id ?? null}
+        responsibleUserIds={Array.from(responsibleUserIds)}
+        canPost={!!currentUser}
+        canDelete={isAdmin(currentUser?.role ?? null)}
+        t={translations}
+      />
+    </div>
   </div>
 
   <!-- Lock Event Dialog -->

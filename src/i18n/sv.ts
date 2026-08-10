@@ -80,7 +80,7 @@ export default {
         registerAsResponsible: "Anmäl som ansvarig",
         responsible: "Ansvarig",
         roles: "Roller",
-        pubWorker: "Jobbare",
+        pubWorker: "Pubutbildad",
         aas: "AAS (Alkoholservering)",
         workers: "Jobbare",
         removeWorker: "Ta bort jobbare",
