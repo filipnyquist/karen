@@ -68,8 +68,10 @@ services:
 volumes:
   legacy_db_data:
 
-# Share the fixed `karen-net` network with docker-compose.dev.yml and
-# docker-compose.yml so the importer can resolve the `db` hostname.
+# Attach to the prod `traefik-network` so the importer can reach the
+# prod `db` (postgres) by service name. The dev stack uses `karen-net`
+# so if you're running the import against the dev stack, override this
+# to `karen-net` instead.
 networks:
   default:
-    name: karen-net
+    name: traefik-network
