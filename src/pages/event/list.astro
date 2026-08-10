@@ -407,7 +407,7 @@ const hasActiveFilters = search || locationFilter || stateFilter || dateFrom || 
                 const workerCount = event.currentWorkers ?? 0;
                 const isFull = event.maxWorkers !== null && workerCount >= event.maxWorkers;
                 return (
-                  <tr class="hover:bg-gray-50 dark:hover:bg-gray-800/50 cursor-pointer" onclick={`location.href='/event/${event.id}'`}>
+                  <tr class="hover:bg-gray-50 dark:hover:bg-gray-800/50 cursor-pointer" data-action="open-event" data-event-id={event.id}>
                     <td class="px-4 py-3">
                       <div class="flex items-center gap-2">
                         <span class="font-medium text-gray-900 dark:text-white">{event.name}</span>

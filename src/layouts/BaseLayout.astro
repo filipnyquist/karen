@@ -81,6 +81,26 @@ const layoutScript = `(function(){
     }
     return originalFetch(input, init);
   };
+
+  // Inline event handlers (onclick="...") are blocked by CSP, so route every
+  // global click through this delegator. Pages & components opt in by
+  // emitting elements with [data-action="..."]; see LanguageSwitcher and
+  // event/list for examples.
+  document.body.addEventListener('click', (e) => {
+    const target = e.target instanceof Element ? e.target.closest('[data-action]') : null;
+    if (!target) return;
+    const action = target.getAttribute('data-action');
+    if (action === 'set-lang') {
+      const lang = target.getAttribute('data-lang');
+      if (lang === 'sv' || lang === 'en') {
+        document.cookie = 'lang=' + lang + ';path=/;max-age=31536000';
+        location.reload();
+      }
+    } else if (action === 'open-event') {
+      const id = target.getAttribute('data-event-id');
+      if (id) window.location.href = '/event/' + id;
+    }
+  });
 })();`;
 
 Astro.csp?.insertScriptHash(sha256ScriptHash(layoutScript));
