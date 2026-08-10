@@ -103,7 +103,7 @@ export default function EventWorkersPanel({
                                     {t["auth.name"] || "Name"}
                                 </th>
                                 <th class="px-4 py-2.5 text-left font-medium text-gray-500 dark:text-gray-400">
-                                    {t["event.responsible"] || "Role"}
+                                    {t["event.roles"] || "Roles"}
                                 </th>
                                 <th class="px-4 py-2.5" />
                             </tr>
@@ -160,7 +160,12 @@ export default function EventWorkersPanel({
                                                 </span>
                                             )}
                                             {w.hasPubWorker && (
-                                                <span title="Pub Worker">
+                                                <span
+                                                    title={
+                                                        t["event.pubWorker"] ??
+                                                        "Pub Worker"
+                                                    }
+                                                >
                                                     🍺
                                                 </span>
                                             )}

@@ -78,6 +78,8 @@ export default {
         unregister: "Unregister",
         registerAsResponsible: "Sign up as responsible",
         responsible: "Responsible",
+        roles: "Roles",
+        pubWorker: "Pub Worker",
         workers: "Workers",
         removeWorker: "Remove worker",
         confirmRemoveWorker: "Remove this worker from the event?",

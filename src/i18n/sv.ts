@@ -79,6 +79,8 @@ export default {
         unregister: "Avanmäl",
         registerAsResponsible: "Anmäl som ansvarig",
         responsible: "Ansvarig",
+        roles: "Roller",
+        pubWorker: "Jobbare",
         workers: "Jobbare",
         removeWorker: "Ta bort jobbare",
         confirmRemoveWorker: "Ta bort denna jobbare från evenemanget?",
