@@ -88,6 +88,7 @@ export default {
         noWorkers: "No workers registered yet",
         guests: "Guests",
         comments: "Comments",
+        writeComment: "Write a comment",
         report: "Report",
         locked: "Locked",
         lockEvent: "Lock event",

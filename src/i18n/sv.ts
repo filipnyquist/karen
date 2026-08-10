@@ -89,6 +89,7 @@ export default {
         noWorkers: "Inga jobbare registrerade ännu",
         guests: "Gäster",
         comments: "Kommentarer",
+        writeComment: "Skriv en kommentar",
         report: "Rapport",
         locked: "Låst",
         lockEvent: "Lås evenemang",
