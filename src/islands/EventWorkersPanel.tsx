@@ -92,7 +92,7 @@ export default function EventWorkersPanel({
                     {t["event.noWorkers"]}
                 </p>
             ) : (
-                <div class="overflow-x-auto">
+                <div class="overflow-x-auto overflow-y-hidden">
                     <table class="w-full text-sm min-w-[36rem]">
                         <thead class="bg-gray-50 dark:bg-gray-800">
                             <tr>
