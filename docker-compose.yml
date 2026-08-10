@@ -3,8 +3,13 @@ services:
     build: .
     ports:
       - "3000:3000"
+    # DATABASE_SSL=disable is required: the release image bakes
+    # NODE_ENV=production, which makes the postgres-js driver require
+    # TLS by default. The postgres container is reachable only on the
+    # internal karen-net bridge and does not have TLS configured.
     environment:
       - DATABASE_URL=postgresql://karen:karen@db:5432/karen
+      - DATABASE_SSL=disable
       - SMTP_HOST=${SMTP_HOST:-}
       - SMTP_PORT=${SMTP_PORT:-587}
       - SMTP_USER=${SMTP_USER:-}
@@ -43,8 +48,10 @@ services:
   # Run migrations + seed on first start
   migrate:
     build: .
+    # Same DATABASE_SSL rationale as app — see comment above.
     environment:
       - DATABASE_URL=postgresql://karen:karen@db:5432/karen
+      - DATABASE_SSL=disable
     command: ["sh", "-c", "bun db:migrate && bun db:seed"]
     depends_on:
       db:
