@@ -47,10 +47,53 @@ src/
 └── middleware.ts                 # Astro middleware — auth + locale + security headers
 scripts/                          # One-off scripts (SSN encryption migration)
 e2e/                              # Playwright E2E specs
-docker-compose.yml                # Production stack (app + db + migrate)
+docker-compose.yml                # Production stack (app + db + migrate + Traefik labels)
 docker-compose.dev.yml            # Dev stack (app + db + migrate, hot-reload mounts)
-docker-compose.import.yml         # Opt-in legacy data import (legacy-db + legacy-import)
 ```
+
+## Legacy Import
+
+`docker-compose.yml` defines two **opt-in** services behind a `profiles: ["import"]` gate: `legacy-db` (MariaDB with the pykaren dump auto-loaded) and `legacy-import` (TypeScript importer that reads MySQL → writes Postgres). They do not start on a normal `up` — you invoke them explicitly:
+
+### Against the dev stack (recommended first run, to validate)
+
+```bash
+# 1. Place `karen_dump.sql` at the project root (gitignored).
+# 2. Bring up the dev db + migrate + app.
+docker compose -f docker-compose.dev.yml up -d db migrate app
+# 3. Run the importer. legacy-db cold-loads the dump (~30-60 s on a fresh
+#    volume), then legacy-import runs once, exits 0 on success.
+docker compose -f docker-compose.dev.yml --profile import up legacy-import
+# 4. Tear down ONLY the import side (keeps the dev stack running).
+docker compose -f docker-compose.dev.yml stop legacy-db legacy-import
+docker compose -f docker-compose.dev.yml rm -f legacy-db legacy-import
+```
+
+### Against prod
+
+```bash
+docker compose up -d db app
+docker compose --profile import up legacy-import
+docker compose stop legacy-db legacy-import
+docker compose rm -f legacy-db legacy-import
+```
+
+### Gotchas
+
+- `docker compose --profile import down` is a foot-gun: compose's `down` ignores profile filters and tears down the **entire** project (app, db, network). Always use `stop` + `rm` on the two specific services.
+- The importer reads `ENCRYPTION_KEY` from `.env` (via `env_file`) — guest SSNs in the dump get encrypted on the way into Postgres.
+- A successful import from the prod dump typically yields ~1.5k placeholder users, ~1k events, ~7.5k worker registrations, ~2.5k guest registrations, ~1k tickets, ~1k reports. The `legacy_mappings` table records the old MySQL primary key for every imported row.
+
+## Traefik
+
+`docker-compose.yml` wires `app` to the host-wide Traefik instance via Traefik labels + the external `traefik-network`. The existing `3000:3000` host publish stays as a fallback. Traefik routes `https://karen.nyqui.st` → `karen-app-1:3000` with a Let's Encrypt cert; the `compresstraefik` middleware turns on gzip.
+
+To edit the hostname or hostname → container mapping, change the `traefik.http.routers.karen.rule=Host(...)` label. The `app` service sits on two networks:
+
+- `karen-net` (the project default) — to reach `db:5432`.
+- `traefik-network` (external) — so Traefik can discover it.
+
+`db` + `migrate` only join `karen-net` because they don't need to be reached from the proxy.
 
 ## Environment Variables
 
@@ -173,11 +216,11 @@ All test users get randomly generated passwords, written to `./uploads/.e2e-secr
 
 ## Docker / Deployment
 
-The repo ships three compose files, each doing one thing:
+The repo ships **two** compose files, each doing one purpose:
 
 ### `docker-compose.dev.yml` — dev stack
 
-Hot-reload dev environment with source bind-mounted into the app container.
+Hot-reload dev environment with source bind-mounted into the app container. Used standalone on a laptop; does not join the host Traefik.
 
 ```bash
 docker compose -f docker-compose.dev.yml up --build
@@ -187,14 +230,14 @@ Starts `app` (port 4321), `db` (Postgres 16, port 5432), and `migrate` (runs `bu
 
 ### `docker-compose.yml` — production stack
 
-Multi-stage build with no source bind mounts. Set env vars in `.env` (see `.env.example`).
+Multi-stage build with no source bind mounts. Joins the host Traefik so the public hostname routes into the container. Set env vars in `.env` (see `.env.example`).
 
 ```bash
 cp .env.example .env          # edit with production values
 docker compose up --build -d
 ```
 
-Starts `app` (port 3000, via Node HTTP + Bun), `db` (Postgres 16 with persistent `pgdata` volume), and `migrate` (runs once and exits).
+Starts `app` (port 3000, via Node HTTP + Bun — fronted by Traefik on the public hostname via the `traefik` labels; see [Traefik](#traefik)), `db` (Postgres 16 with persistent `pgdata` volume), and `migrate` (runs once and exits).
 
 **Running migrations on an existing database:**
 
@@ -214,30 +257,7 @@ docker compose up migrate
 docker compose exec app bun scripts/encrypt-ssns.ts
 ```
 
-### `docker-compose.import.yml` — manual legacy import
-
-Opt-in flow for importing data from the old pykaren (MySQL) system. Brings up a temporary MySQL container, loads the dump into a fresh volume, runs the importer once, then tears down.
-
-**Pre-flight:**
-- `karen_dump.sql` (MySQL dump of the legacy pykaren DB) must be in the project root.
-- The dev or prod stack must already be running with migrations applied.
-
-**Run it (from the project root):**
-
-```bash
-# Make sure the dev stack is up and migrate has finished:
-docker compose -f docker-compose.dev.yml up --build
-
-# In a second terminal, run the importer:
-docker compose -f docker-compose.import.yml up legacy-import
-
-# When it finishes, tear down the MySQL container:
-docker compose -f docker-compose.import.yml down
-```
-
-The `legacy-import` service joins the same fixed `karen-net` network as the dev/prod stack so it can resolve `db:5432` regardless of your current directory.
-
-⚠  **`docker compose -f docker-compose.import.yml down -v` wipes `legacy_db_data`**, the volume holding the loaded MySQL data. Don't run that until you've confirmed the import succeeded (the imported events, users, and workers are visible in the app).
+`docker-compose.import.yml` was folded into `docker-compose.yml` and `docker-compose.dev.yml` behind the `import` profile. See the [Legacy Import](#legacy-import) section above for the current workflow.
 
 ## Scripts
 
