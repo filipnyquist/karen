@@ -2,6 +2,7 @@
 // src/pages/login.astro
 import BaseLayout from '../layouts/BaseLayout.astro';
 import { config } from '../config';
+import { sha256ScriptHash } from '../lib/csp';
 
 const t = Astro.locals.t;
 const user = Astro.locals.user;
@@ -23,6 +24,45 @@ const turnstileSitekey = config.turnstile.sitekey;
 if (turnstileSitekey) {
     Astro.csp?.insertScriptResource("https://challenges.cloudflare.com");
 }
+
+// Inline submit handler. The literal string rendered into the HTML must
+// match the hash we register, so we keep it in a single const.
+const loginScript = `(function(){
+  const turnstileSitekey = ${JSON.stringify(turnstileSitekey)};
+  document.getElementById('login-form')?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const form = e.target;
+    const email = form.email.value;
+    const password = form.password.value;
+
+    const body = { email, password };
+    if (turnstileSitekey && window.turnstile) {
+      const token = turnstile.getResponse();
+      if (!token) return;
+      body.turnstileToken = token;
+    }
+
+    try {
+      const res = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+        credentials: 'same-origin',
+      });
+      if (res.ok) {
+        window.location.href = '/';
+      } else {
+        const err = await res.json();
+        const params = new URLSearchParams({ error: err.error || 'Login failed' });
+        window.location.href = '/login?' + params;
+      }
+    } catch {
+      window.location.href = '/login?error=Network error';
+    }
+  });
+})();`;
+
+Astro.csp?.insertScriptHash(sha256ScriptHash(loginScript));
 ---
 
 <BaseLayout title={t('auth.login')}>
@@ -100,39 +140,7 @@ if (turnstileSitekey) {
         ></script>
       )}
 
-      <script define:vars={{ turnstileSitekey }}>
-        document.getElementById('login-form')?.addEventListener('submit', async (e) => {
-          e.preventDefault();
-          const form = e.target;
-          const email = form.email.value;
-          const password = form.password.value;
-
-          const body = { email, password };
-          if (turnstileSitekey && window.turnstile) {
-            const token = turnstile.getResponse();
-            if (!token) return;
-            body.turnstileToken = token;
-          }
-
-          try {
-            const res = await fetch('/api/auth/login', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify(body),
-              credentials: 'same-origin',
-            });
-            if (res.ok) {
-              window.location.href = '/';
-            } else {
-              const err = await res.json();
-              const params = new URLSearchParams({ error: err.error || 'Login failed' });
-              window.location.href = '/login?' + params;
-            }
-          } catch {
-            window.location.href = '/login?error=Network error';
-          }
-        });
-      </script>
+      <script is:inline set:html={loginScript}></script>
 
       <p class="mt-4 text-center text-sm text-gray-600 dark:text-gray-400">
         {t('auth.noAccount')}

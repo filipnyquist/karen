@@ -2,6 +2,7 @@
 // src/pages/register.astro
 import BaseLayout from '../layouts/BaseLayout.astro';
 import { config } from '../config';
+import { sha256ScriptHash } from '../lib/csp';
 
 const t = Astro.locals.t;
 const user = Astro.locals.user;
@@ -19,6 +20,63 @@ const turnstileSitekey = config.turnstile.sitekey;
 if (turnstileSitekey) {
     Astro.csp?.insertScriptResource("https://challenges.cloudflare.com");
 }
+
+// Inline submit handler. The literal string rendered into the HTML must
+// match the hash we register, so we keep it in a single const.
+const registerScript = `(function(){
+  const turnstileSitekey = ${JSON.stringify(turnstileSitekey)};
+  const bthEmailBlocked = ${JSON.stringify(t('auth.bthEmailBlocked'))};
+  const errorMessages = {
+    BTH_BLOCKED: ${JSON.stringify(t('auth.bthEmailBlocked'))},
+    BAD_REQUEST: ${JSON.stringify(t('auth.registerFailed') || 'Registration failed')},
+    CONFLICT: ${JSON.stringify(t('auth.emailTaken') || 'Email already registered')}
+  };
+  document.getElementById('register-form')?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const form = e.target;
+    const email = form.email.value.trim().toLowerCase();
+    if (email.endsWith('@student.bth.se') || email.endsWith('@bthstudent.se')) {
+      const params = new URLSearchParams({ error: bthEmailBlocked });
+      window.location.href = '/register?' + params;
+      return;
+    }
+    const body = {
+      email: form.email.value,
+      password: form.password.value,
+      name: form.name.value,
+      nickname: form.nickname.value,
+    };
+
+    if (turnstileSitekey && window.turnstile) {
+      const token = turnstile.getResponse();
+      if (!token) return;
+      body.turnstileToken = token;
+    }
+
+    try {
+      const res = await fetch('/api/auth/register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+        credentials: 'same-origin',
+      });
+      if (res.ok) {
+        window.location.href = '/login?msg=registered';
+      } else {
+        const err = await res.json();
+        const msg = err.code === 'BTH_BLOCKED' ? errorMessages.BTH_BLOCKED
+          : err.code === 'CONFLICT' ? errorMessages.CONFLICT
+          : err.error || errorMessages.BAD_REQUEST;
+        const params = new URLSearchParams({ error: msg });
+        window.location.href = '/register?' + params;
+      }
+    } catch {
+      window.location.href = '/register?error=Network error';
+    }
+  });
+})();`;
+
+Astro.csp?.insertScriptHash(sha256ScriptHash(registerScript));
 ---
 
 <BaseLayout title={t('auth.register')}>
@@ -116,51 +174,7 @@ if (turnstileSitekey) {
         ></script>
       )}
 
-      <script define:vars={{ turnstileSitekey, bthEmailBlocked: t('auth.bthEmailBlocked'), errorMessages: { BTH_BLOCKED: t('auth.bthEmailBlocked'), BAD_REQUEST: t('auth.registerFailed') || 'Registration failed', CONFLICT: t('auth.emailTaken') || 'Email already registered' } }}>
-        document.getElementById('register-form')?.addEventListener('submit', async (e) => {
-          e.preventDefault();
-          const form = e.target;
-          const email = form.email.value.trim().toLowerCase();
-          if (email.endsWith('@student.bth.se') || email.endsWith('@bthstudent.se')) {
-            const params = new URLSearchParams({ error: bthEmailBlocked });
-            window.location.href = '/register?' + params;
-            return;
-          }
-          const body = {
-            email: form.email.value,
-            password: form.password.value,
-            name: form.name.value,
-            nickname: form.nickname.value,
-          };
-
-          if (turnstileSitekey && window.turnstile) {
-            const token = turnstile.getResponse();
-            if (!token) return;
-            body.turnstileToken = token;
-          }
-
-          try {
-            const res = await fetch('/api/auth/register', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify(body),
-              credentials: 'same-origin',
-            });
-            if (res.ok) {
-              window.location.href = '/login?msg=registered';
-            } else {
-              const err = await res.json();
-              const msg = err.code === 'BTH_BLOCKED' ? errorMessages.BTH_BLOCKED
-                : err.code === 'CONFLICT' ? errorMessages.CONFLICT
-                : err.error || errorMessages.BAD_REQUEST;
-              const params = new URLSearchParams({ error: msg });
-              window.location.href = '/register?' + params;
-            }
-          } catch {
-            window.location.href = '/register?error=Network error';
-          }
-        });
-      </script>
+      <script is:inline set:html={registerScript}></script>
 
       <p class="mt-4 text-center text-sm text-gray-600 dark:text-gray-400">
         {t('auth.hasAccount')}

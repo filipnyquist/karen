@@ -7,6 +7,7 @@ import { pubTeams, pubTeamMembers, users } from '../../db/schema';
 import { eq } from 'drizzle-orm';
 import { anonymizeName } from '../../utils/anonymize';
 import { getTeamPoints } from '../../services/teamScoring';
+import { sha256ScriptHash } from '../../lib/csp';
 import { isAdmin } from '../../api/middleware/auth';
 
 const t = Astro.locals.t;
@@ -47,6 +48,101 @@ const isTeamAdmin = currentUser
   : false;
 const memberCount = members.length;
 const teamPoints = await getTeamPoints(teamId);
+
+// Inline team-action handler. Built in the frontmatter so the SHA-256 we
+// register matches the literal HTML that goes out.
+const teamScript = `(function(){
+  const teamId = ${JSON.stringify(teamId)};
+  const memberCount = ${JSON.stringify(memberCount)};
+  const t = {
+    failed: ${JSON.stringify(t('common.failed'))},
+    networkError: ${JSON.stringify(t('common.networkError'))},
+    confirmDeleteTeam: ${JSON.stringify(t('team.confirmDeleteTeam'))},
+    confirmRemoveMember: ${JSON.stringify(t('team.confirmRemoveMember') || 'Remove this member?')},
+    leaveConfirm: ${JSON.stringify(memberCount <= 1 ? (t('team.lastMemberWarning') || 'You are the last member. Leaving will delete this team.') : t('team.leaveTeam') + '?')}
+  };
+
+  async function joinTeam() {
+    try {
+      const res = await fetch('/api/teams/' + teamId + '/join', { method: 'POST', credentials: 'same-origin' });
+      if (res.ok) { location.reload(); }
+      else { const d = await res.json(); window.appAlert(d.error || t.failed); }
+    } catch { window.appAlert(t.networkError); }
+  }
+  window.joinTeam = joinTeam;
+
+  function leaveTeam() {
+    window.appConfirm(t.leaveConfirm, async () => {
+      try {
+        const res = await fetch('/api/teams/' + teamId + '/leave', { method: 'POST', credentials: 'same-origin' });
+        if (res.ok) {
+          const data = await res.json();
+          if (data.teamDeleted) { window.location.href = '/pubteam/list'; }
+          else { location.reload(); }
+        } else {
+          const d = await res.json();
+          window.appAlert(d.error || t.failed);
+        }
+      } catch { window.appAlert(t.networkError); }
+    });
+  }
+  window.leaveTeam = leaveTeam;
+
+  function deleteTeam() {
+    window.appConfirm(t.confirmDeleteTeam, async () => {
+      try {
+        const res = await fetch('/api/teams/' + teamId, { method: 'DELETE', credentials: 'same-origin' });
+        if (res.ok) { window.location.href = '/pubteam/list'; }
+        else { const d = await res.json(); window.appAlert(d.error || t.failed); }
+      } catch { window.appAlert(t.networkError); }
+    });
+  }
+  window.deleteTeam = deleteTeam;
+
+  function removeTeamMember(userId) {
+    window.appConfirm(t.confirmRemoveMember, async () => {
+      try {
+        const res = await fetch('/api/teams/' + teamId + '/members/' + userId, { method: 'DELETE', credentials: 'same-origin' });
+        if (res.ok) { location.reload(); }
+        else { const d = await res.json(); window.appAlert(d.error || t.failed); }
+      } catch { window.appAlert(t.networkError); }
+    });
+  }
+  window.removeTeamMember = removeTeamMember;
+
+  function toggleTeamAdmin(userId, isAdmin) {
+    fetch('/api/teams/' + teamId + '/members/' + userId, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ isAdmin }),
+      credentials: 'same-origin',
+    }).then(res => {
+      if (res.ok) { location.reload(); }
+      else { return res.json().then(d => window.appAlert(d.error || t.failed)); }
+    }).catch(() => window.appAlert(t.networkError));
+  }
+
+  // Event delegation — replaces inline onclick="fn('${uuid}')" patterns.
+  document.body.addEventListener('click', (e) => {
+    const target = e.target instanceof Element ? e.target.closest('[data-action]') : null;
+    if (!target) return;
+    const action = target.getAttribute('data-action');
+    const userId = target.getAttribute('data-user-id');
+    switch (action) {
+      case 'join-team': joinTeam(); break;
+      case 'leave-team': leaveTeam(); break;
+      case 'delete-team': deleteTeam(); break;
+      case 'toggle-team-admin': {
+        const isAdmin = target.getAttribute('data-is-admin') === 'true';
+        toggleTeamAdmin(userId, isAdmin);
+        break;
+      }
+      case 'remove-team-member': removeTeamMember(userId); break;
+    }
+  });
+})();`;
+
+Astro.csp?.insertScriptHash(sha256ScriptHash(teamScript));
 ---
 
 <BaseLayout title={team.name}>
@@ -211,84 +307,5 @@ const teamPoints = await getTeamPoints(teamId);
     </div>
   </div>
 
-  <script define:vars={{ teamId, memberCount, t: { failed: t('common.failed'), networkError: t('common.networkError'), confirmDeleteTeam: t('team.confirmDeleteTeam'), confirmRemoveMember: t('team.confirmRemoveMember') || 'Remove this member?', leaveConfirm: memberCount <= 1 ? t('team.lastMemberWarning') || 'You are the last member. Leaving will delete this team.' : t('team.leaveTeam') + '?' } }}>
-    async function joinTeam() {
-      try {
-        const res = await fetch(`/api/teams/${teamId}/join`, { method: 'POST', credentials: 'same-origin' });
-        if (res.ok) { location.reload(); }
-        else { const d = await res.json(); window.appAlert(d.error || t.failed); }
-      } catch { window.appAlert(t.networkError); }
-    }
-    window.joinTeam = joinTeam;
-
-    function leaveTeam() {
-      window.appConfirm(t.leaveConfirm, async () => {
-        try {
-          const res = await fetch(`/api/teams/${teamId}/leave`, { method: 'POST', credentials: 'same-origin' });
-          if (res.ok) {
-            const data = await res.json();
-            if (data.teamDeleted) { location.href = '/pubteam/list'; }
-            else { location.reload(); }
-          } else {
-            const d = await res.json();
-            window.appAlert(d.error || t.failed);
-          }
-        } catch { window.appAlert(t.networkError); }
-      });
-    }
-    window.leaveTeam = leaveTeam;
-
-    function deleteTeam() {
-      window.appConfirm(t.confirmDeleteTeam, async () => {
-        try {
-          const res = await fetch(`/api/teams/${teamId}`, { method: 'DELETE', credentials: 'same-origin' });
-          if (res.ok) { location.href = '/pubteam/list'; }
-          else { const d = await res.json(); window.appAlert(d.error || t.failed); }
-        } catch { window.appAlert(t.networkError); }
-      });
-    }
-    window.deleteTeam = deleteTeam;
-
-    function removeTeamMember(userId) {
-      window.appConfirm(t.confirmRemoveMember, async () => {
-        try {
-          const res = await fetch(`/api/teams/${teamId}/members/${userId}`, { method: 'DELETE', credentials: 'same-origin' });
-          if (res.ok) { location.reload(); }
-          else { const d = await res.json(); window.appAlert(d.error || t.failed); }
-        } catch { window.appAlert(t.networkError); }
-      });
-    }
-    window.removeTeamMember = removeTeamMember;
-
-    function toggleTeamAdmin(userId, isAdmin) {
-      fetch(`/api/teams/${teamId}/members/${userId}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ isAdmin }),
-        credentials: 'same-origin',
-      }).then(res => {
-        if (res.ok) { location.reload(); }
-        else { return res.json().then(d => window.appAlert(d.error || t.failed)); }
-      }).catch(() => window.appAlert(t.networkError));
-    }
-
-    // Event delegation — replaces inline onclick="fn('${uuid}')" patterns.
-    document.body.addEventListener('click', (e) => {
-      const target = e.target instanceof Element ? e.target.closest('[data-action]') : null;
-      if (!target) return;
-      const action = target.getAttribute('data-action');
-      const userId = target.getAttribute('data-user-id');
-      switch (action) {
-        case 'join-team': joinTeam(); break;
-        case 'leave-team': leaveTeam(); break;
-        case 'delete-team': deleteTeam(); break;
-        case 'toggle-team-admin': {
-          const isAdmin = target.getAttribute('data-is-admin') === 'true';
-          toggleTeamAdmin(userId, isAdmin);
-          break;
-        }
-        case 'remove-team-member': removeTeamMember(userId); break;
-      }
-    });
-  </script>
+  <script is:inline set:html={teamScript}></script>
 </BaseLayout>

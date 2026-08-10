@@ -6,6 +6,7 @@ import { db } from '../../../db';
 import { pubTeams, pubTeamMembers } from '../../../db/schema';
 import { eq, and } from 'drizzle-orm';
 import { flattenTranslations } from '../../../i18n';
+import { sha256ScriptHash } from '../../../lib/csp';
 import { isAdmin } from '../../../api/middleware/auth';
 import { requireAuth } from '../../../lib/guards';
 
@@ -40,6 +41,38 @@ if (!team) {
 }
 
 const translations = flattenTranslations(Astro.locals.translations);
+
+// Inline edit-team submit handler. Built as a string in the frontmatter so
+// the SHA-256 we register matches the literal HTML that goes out.
+const editTeamScript = `(function(){
+  const teamId = ${JSON.stringify(teamId)};
+  const form = document.getElementById('edit-team-form');
+  form?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const name = document.getElementById('name').value.trim();
+    const description = document.getElementById('description').value.trim();
+    const teamColor = document.getElementById('teamColor').value;
+
+    try {
+      const res = await fetch('/api/teams/' + teamId, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'same-origin',
+        body: JSON.stringify({ name, description: description || undefined, teamColor }),
+      });
+      if (res.ok) {
+        window.location.href = '/pubteam/' + teamId;
+      } else {
+        const data = await res.json();
+        window.appAlert(data.error || 'Failed to update team');
+      }
+    } catch {
+      window.appAlert('Network error');
+    }
+  });
+})();`;
+
+Astro.csp?.insertScriptHash(sha256ScriptHash(editTeamScript));
 ---
 
 <BaseLayout title={t('team.editTeam')}>
@@ -110,30 +143,5 @@ const translations = flattenTranslations(Astro.locals.translations);
     </form>
   </div>
 
-  <script define:vars={{ teamId }}>
-    const form = document.getElementById('edit-team-form');
-    form?.addEventListener('submit', async (e) => {
-      e.preventDefault();
-      const name = document.getElementById('name').value.trim();
-      const description = document.getElementById('description').value.trim();
-      const teamColor = document.getElementById('teamColor').value;
-
-      try {
-        const res = await fetch(`/api/teams/${teamId}`, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          credentials: 'same-origin',
-          body: JSON.stringify({ name, description: description || undefined, teamColor }),
-        });
-        if (res.ok) {
-          location.href = `/pubteam/${teamId}`;
-        } else {
-          const data = await res.json();
-          window.appAlert(data.error || 'Failed to update team');
-        }
-      } catch {
-        window.appAlert('Network error');
-      }
-    });
-  </script>
+  <script is:inline set:html={editTeamScript}></script>
 </BaseLayout>

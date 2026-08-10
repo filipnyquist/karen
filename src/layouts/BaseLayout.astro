@@ -2,6 +2,7 @@
 // src/layouts/BaseLayout.astro
 import NavBar from '../components/NavBar.astro';
 import '../styles/global.css';
+import { sha256ScriptHash } from '../lib/csp';
 
 interface Props {
   title?: string;
@@ -15,6 +16,74 @@ const siteTitle = title ? `${title} | ${t('site.title')}` : t('site.title');
 const modalOk = t('modal.ok');
 const modalCancel = t('modal.cancel');
 const modalConfirm = t('modal.confirm');
+
+// Inline modal+CSRF script. The browser CSP hashes the *exact* source string
+// that ends up in the HTML, so we must render the script via `set:html` with
+// the same string we hash, and not introduce any whitespace mutations between
+// the two.
+const layoutScript = `(function(){
+  const modalOk = ${JSON.stringify(modalOk)};
+  const modalCancel = ${JSON.stringify(modalCancel)};
+  const modalConfirm = ${JSON.stringify(modalConfirm)};
+  const modal = document.getElementById('app-modal');
+  const msgEl = document.getElementById('app-modal-message');
+  const okBtn = document.getElementById('app-modal-ok');
+  const cancelBtn = document.getElementById('app-modal-cancel');
+  const confirmBtn = document.getElementById('app-modal-confirm');
+
+  function showModal() {
+    modal.classList.remove('hidden');
+    okBtn.classList.add('hidden');
+    cancelBtn.classList.add('hidden');
+    confirmBtn.classList.add('hidden');
+  }
+  function hideModal() {
+    modal.classList.add('hidden');
+  }
+
+  window.appAlert = function(message) {
+    msgEl.textContent = message;
+    showModal();
+    okBtn.classList.remove('hidden');
+    okBtn.onclick = hideModal;
+    okBtn.focus();
+  };
+
+  window.appConfirm = function(message, onConfirm) {
+    msgEl.textContent = message;
+    showModal();
+    cancelBtn.classList.remove('hidden');
+    confirmBtn.classList.remove('hidden');
+    cancelBtn.onclick = hideModal;
+    confirmBtn.onclick = () => { hideModal(); onConfirm(); };
+    confirmBtn.focus();
+  };
+
+  // Close on backdrop click
+  modal.addEventListener('click', (e) => { if (e.target === modal) hideModal(); });
+
+  // CSRF protection — stamp X-CSRF-Token on every state-changing fetch.
+  // The csrf_token cookie is JS-readable (no HttpOnly) so we can read it.
+  function readCsrfCookie() {
+    const m = document.cookie.match(/(?:^|;\\s*)csrf_token=([^;]+)/);
+    return m ? m[1] : null;
+  }
+  const originalFetch = window.fetch.bind(window);
+  window.fetch = (input, init = {}) => {
+    const method = (init.method ?? (input instanceof Request ? input.method : 'GET')).toUpperCase();
+    if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(method)) {
+      const headers = new Headers(init.headers ?? (input instanceof Request ? input.headers : undefined));
+      if (!headers.has('X-CSRF-Token')) {
+        const token = readCsrfCookie();
+        if (token) headers.set('X-CSRF-Token', token);
+      }
+      init = { ...init, credentials: init.credentials ?? 'same-origin', headers };
+    }
+    return originalFetch(input, init);
+  };
+})();`;
+
+Astro.csp?.insertScriptHash(sha256ScriptHash(layoutScript));
 ---
 
 <!doctype html>
@@ -67,63 +136,6 @@ const modalConfirm = t('modal.confirm');
       </div>
     </div>
 
-    <script define:vars={{ modalOk, modalCancel, modalConfirm }}>
-      const modal = document.getElementById('app-modal');
-      const msgEl = document.getElementById('app-modal-message');
-      const okBtn = document.getElementById('app-modal-ok');
-      const cancelBtn = document.getElementById('app-modal-cancel');
-      const confirmBtn = document.getElementById('app-modal-confirm');
-
-      function showModal() {
-        modal.classList.remove('hidden');
-        okBtn.classList.add('hidden');
-        cancelBtn.classList.add('hidden');
-        confirmBtn.classList.add('hidden');
-      }
-      function hideModal() {
-        modal.classList.add('hidden');
-      }
-
-      window.appAlert = function(message) {
-        msgEl.textContent = message;
-        showModal();
-        okBtn.classList.remove('hidden');
-        okBtn.onclick = hideModal;
-        okBtn.focus();
-      };
-
-      window.appConfirm = function(message, onConfirm) {
-        msgEl.textContent = message;
-        showModal();
-        cancelBtn.classList.remove('hidden');
-        confirmBtn.classList.remove('hidden');
-        cancelBtn.onclick = hideModal;
-        confirmBtn.onclick = () => { hideModal(); onConfirm(); };
-        confirmBtn.focus();
-      };
-
-      // Close on backdrop click
-      modal.addEventListener('click', (e) => { if (e.target === modal) hideModal(); });
-
-      // CSRF protection — stamp X-CSRF-Token on every state-changing fetch.
-      // The csrf_token cookie is JS-readable (no HttpOnly) so we can read it.
-      function readCsrfCookie() {
-        const m = document.cookie.match(/(?:^|;\s*)csrf_token=([^;]+)/);
-        return m ? m[1] : null;
-      }
-      const originalFetch = window.fetch.bind(window);
-      window.fetch = (input, init = {}) => {
-        const method = (init.method ?? (input instanceof Request ? input.method : 'GET')).toUpperCase();
-        if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(method)) {
-          const headers = new Headers(init.headers ?? (input instanceof Request ? input.headers : undefined));
-          if (!headers.has('X-CSRF-Token')) {
-            const token = readCsrfCookie();
-            if (token) headers.set('X-CSRF-Token', token);
-          }
-          init = { ...init, credentials: init.credentials ?? 'same-origin', headers };
-        }
-        return originalFetch(input, init);
-      };
-    </script>
+    <script is:inline set:html={layoutScript}></script>
   </body>
 </html>

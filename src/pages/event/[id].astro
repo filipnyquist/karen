@@ -13,6 +13,7 @@ import GuestManager from '../../islands/GuestManager';
 import ReportEditor from '../../islands/ReportEditor';
 import { anonymizeName } from '../../utils/anonymize';
 import { flattenTranslations } from '../../i18n/index';
+import { sha256ScriptHash } from '../../lib/csp';
 import { db } from '../../db';
 import {
   events, locations, eventStates, workerRegistrations, guestRegistrations,
@@ -194,6 +195,212 @@ const endDate = new Date(event.endDate);
 const isPast = endDate < new Date();
 const translations = flattenTranslations(Astro.locals.translations as unknown as Record<string, unknown>);
 const isReportEditing = !!reportResult;
+
+// Inline action handler — runs after the page is parsed. The literal string
+// rendered into the HTML must match the hash we register, so build it once
+// here and inject via `set:html` below.
+const eventScript = `(function(){
+  const eventId = ${JSON.stringify(eventId)};
+  const isEditing = ${JSON.stringify(isReportEditing)};
+  const t = {
+    confirmDeleteEvent: ${JSON.stringify(t('event.confirmDeleteEvent'))},
+    confirmUnlockEvent: ${JSON.stringify(t('event.confirmUnlockEvent'))},
+    lockSuccess: ${JSON.stringify(t('event.lockSuccess'))},
+    lockSuccessTickets: ${JSON.stringify(t('event.lockSuccessTickets'))},
+    unlockSuccess: ${JSON.stringify(t('event.unlockSuccess'))},
+    networkError: ${JSON.stringify(t('common.networkError'))},
+    failed: ${JSON.stringify(t('common.failed'))}
+  };
+
+  // Register as worker
+  async function registerForEvent(eventId, responsible) {
+    try {
+      const res = await fetch('/api/workers/register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ eventId, responsible }),
+        credentials: 'same-origin',
+      });
+      if (res.ok) {
+        location.reload();
+      } else {
+        const d = await res.json();
+        window.appAlert(d.error || t.failed);
+      }
+    } catch {
+      window.appAlert(t.networkError);
+    }
+  }
+  window.registerForEvent = registerForEvent;
+
+  // Unregister from event
+  async function unregisterFromEvent(eventId) {
+    try {
+      const res = await fetch('/api/workers/register/' + eventId, {
+        method: 'DELETE',
+        credentials: 'same-origin',
+      });
+      if (res.ok) {
+        location.reload();
+      } else {
+        const d = await res.json();
+        window.appAlert(d.error || t.failed);
+      }
+    } catch {
+      window.appAlert(t.networkError);
+    }
+  }
+  window.unregisterFromEvent = unregisterFromEvent;
+
+  // Delete event (admin)
+  function deleteEvent(eventId) {
+    window.appConfirm(t.confirmDeleteEvent, () => doDeleteEvent(eventId));
+  }
+  async function doDeleteEvent(eventId) {
+    try {
+      const res = await fetch('/api/events/' + eventId, {
+        method: 'DELETE',
+        credentials: 'same-origin',
+      });
+      if (res.ok) {
+        window.location.href = '/event/list';
+      } else {
+        const d = await res.json();
+        window.appAlert(d.error || t.failed);
+      }
+    } catch {
+      window.appAlert(t.networkError);
+    }
+  }
+  window.deleteEvent = deleteEvent;
+
+  // Lock event
+  const lockDialog = document.getElementById('lock-dialog');
+  const lockCancelBtn = document.getElementById('lock-cancel-btn');
+  const lockConfirmBtn = document.getElementById('lock-confirm-btn');
+  const lockIssueTickets = document.getElementById('lock-issue-tickets');
+
+  function showLockDialog() {
+    if (lockDialog) lockDialog.classList.remove('hidden');
+  }
+  window.showLockDialog = showLockDialog;
+
+  if (lockCancelBtn) {
+    lockCancelBtn.addEventListener('click', () => {
+      if (lockDialog) lockDialog.classList.add('hidden');
+    });
+  }
+  lockDialog?.addEventListener('click', (e) => {
+    if (e.target === lockDialog) lockDialog.classList.add('hidden');
+  });
+
+  if (lockConfirmBtn) {
+    lockConfirmBtn.addEventListener('click', async () => {
+      const issueTickets = lockIssueTickets?.checked ?? false;
+      lockConfirmBtn.disabled = true;
+      try {
+        const res = await fetch('/api/events/' + eventId + '/lock', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'same-origin',
+          body: JSON.stringify({ locked: true, issueTickets }),
+        });
+        if (res.ok) {
+          const data = await res.json();
+          if (data.ticketsIssued > 0) {
+            window.appAlert(t.lockSuccessTickets.replace('{count}', data.ticketsIssued));
+          } else {
+            window.appAlert(t.lockSuccess);
+          }
+          location.reload();
+        } else {
+          const d = await res.json();
+          window.appAlert(d.error || t.failed);
+          lockConfirmBtn.disabled = false;
+        }
+      } catch {
+        window.appAlert(t.networkError);
+        lockConfirmBtn.disabled = false;
+      }
+    });
+  }
+
+  // Unlock event (admin only)
+  async function doUnlockEvent() {
+    try {
+      const res = await fetch('/api/events/' + eventId + '/lock', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'same-origin',
+        body: JSON.stringify({ locked: false }),
+      });
+      if (res.ok) {
+        window.appAlert(t.unlockSuccess);
+        location.reload();
+      } else {
+        const d = await res.json();
+        window.appAlert(d.error || t.failed);
+      }
+    } catch {
+      window.appAlert(t.networkError);
+    }
+  }
+
+  // Modal helper
+  function setupModal(openId, modalId, closeId) {
+    const openBtn = document.getElementById(openId);
+    const modal = document.getElementById(modalId);
+    const closeBtn = document.getElementById(closeId);
+    if (openBtn && modal) {
+      openBtn.addEventListener('click', () => modal.classList.remove('hidden'));
+      closeBtn?.addEventListener('click', () => modal.classList.add('hidden'));
+      modal.addEventListener('click', (e) => { if (e.target === modal) modal.classList.add('hidden'); });
+    }
+  }
+
+  // Guest modal
+  setupModal('open-guest-modal-btn', 'guest-modal', 'close-guest-modal-btn');
+
+  // Report modal
+  setupModal('open-report-modal-btn', 'report-modal', 'close-report-modal-btn');
+
+  // Event delegation for buttons that carry data-action attributes.
+  // Avoids inline onclick="fn('${uuid}')" interpolation that would
+  // become an XSS vector if any value ever lost its UUID guarantee.
+  document.body.addEventListener('click', (e) => {
+    const target = e.target instanceof Element ? e.target.closest('[data-action]') : null;
+    if (!target) return;
+    const action = target.getAttribute('data-action');
+    const evId = target.getAttribute('data-event-id');
+    switch (action) {
+      case 'delete-event':
+        window.appConfirm(t.confirmDeleteEvent, () => doDeleteEvent(evId));
+        break;
+      case 'unregister-from-event':
+        unregisterFromEvent(evId);
+        break;
+      case 'register-for-event': {
+        const responsible = target.getAttribute('data-responsible') === 'true';
+        registerForEvent(evId, responsible);
+        break;
+      }
+      case 'unlock-event':
+        window.appConfirm(t.confirmUnlockEvent, () => doUnlockEvent());
+        break;
+    }
+  });
+
+  // Lock dialog toggling
+  document.addEventListener('click', (e) => {
+    const target = e.target instanceof Element ? e.target : null;
+    if (!target) return;
+    if (target.closest('[data-action="show-lock-dialog"]')) {
+      showLockDialog();
+    }
+  });
+})();`;
+
+Astro.csp?.insertScriptHash(sha256ScriptHash(eventScript));
 ---
 
 <BaseLayout title={event.name}>
@@ -485,192 +692,5 @@ const isReportEditing = !!reportResult;
     </div>
   )}
 
-  <script define:vars={{ eventId, isEditing: isReportEditing, t: { confirmDeleteEvent: t('event.confirmDeleteEvent'), confirmUnlockEvent: t('event.confirmUnlockEvent'), lockSuccess: t('event.lockSuccess'), lockSuccessTickets: t('event.lockSuccessTickets'), unlockSuccess: t('event.unlockSuccess'), networkError: t('common.networkError'), failed: t('common.failed') } }}>
-    // Register as worker
-    async function registerForEvent(eventId, responsible) {
-      try {
-        const res = await fetch('/api/workers/register', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ eventId, responsible }),
-          credentials: 'same-origin',
-        });
-        if (res.ok) {
-          location.reload();
-        } else {
-          const d = await res.json();
-          window.appAlert(d.error || t.failed);
-        }
-      } catch {
-        window.appAlert(t.networkError);
-      }
-    }
-    window.registerForEvent = registerForEvent;
-
-    // Unregister from event
-    async function unregisterFromEvent(eventId) {
-      try {
-        const res = await fetch(`/api/workers/register/${eventId}`, {
-          method: 'DELETE',
-          credentials: 'same-origin',
-        });
-        if (res.ok) {
-          location.reload();
-        } else {
-          const d = await res.json();
-          window.appAlert(d.error || t.failed);
-        }
-      } catch {
-        window.appAlert(t.networkError);
-      }
-    }
-    window.unregisterFromEvent = unregisterFromEvent;
-
-    // Delete event (admin)
-    function deleteEvent(eventId) {
-      window.appConfirm(t.confirmDeleteEvent, () => doDeleteEvent(eventId));
-    }
-    async function doDeleteEvent(eventId) {
-      try {
-        const res = await fetch(`/api/events/${eventId}`, {
-          method: 'DELETE',
-          credentials: 'same-origin',
-        });
-        if (res.ok) {
-          location.href = '/event/list';
-        } else {
-          const d = await res.json();
-          window.appAlert(d.error || t.failed);
-        }
-      } catch {
-        window.appAlert(t.networkError);
-      }
-    }
-    window.deleteEvent = deleteEvent;
-
-    // Lock event
-    const lockDialog = document.getElementById('lock-dialog');
-    const lockCancelBtn = document.getElementById('lock-cancel-btn');
-    const lockConfirmBtn = document.getElementById('lock-confirm-btn');
-    const lockIssueTickets = document.getElementById('lock-issue-tickets');
-
-    function showLockDialog() {
-      if (lockDialog) lockDialog.classList.remove('hidden');
-    }
-    window.showLockDialog = showLockDialog;
-
-    if (lockCancelBtn) {
-      lockCancelBtn.addEventListener('click', () => {
-        if (lockDialog) lockDialog.classList.add('hidden');
-      });
-    }
-    lockDialog?.addEventListener('click', (e) => {
-      if (e.target === lockDialog) lockDialog.classList.add('hidden');
-    });
-
-    if (lockConfirmBtn) {
-      lockConfirmBtn.addEventListener('click', async () => {
-        const issueTickets = lockIssueTickets?.checked ?? false;
-        lockConfirmBtn.disabled = true;
-        try {
-          const res = await fetch(`/api/events/${eventId}/lock`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            credentials: 'same-origin',
-            body: JSON.stringify({ locked: true, issueTickets }),
-          });
-          if (res.ok) {
-            const data = await res.json();
-            if (data.ticketsIssued > 0) {
-              window.appAlert(t.lockSuccessTickets.replace('{count}', data.ticketsIssued));
-            } else {
-              window.appAlert(t.lockSuccess);
-            }
-            location.reload();
-          } else {
-            const d = await res.json();
-            window.appAlert(d.error || t.failed);
-            lockConfirmBtn.disabled = false;
-          }
-        } catch {
-          window.appAlert(t.networkError);
-          lockConfirmBtn.disabled = false;
-        }
-      });
-    }
-
-    // Unlock event (admin only)
-    async function doUnlockEvent() {
-      try {
-        const res = await fetch(`/api/events/${eventId}/lock`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          credentials: 'same-origin',
-          body: JSON.stringify({ locked: false }),
-        });
-        if (res.ok) {
-          window.appAlert(t.unlockSuccess);
-          location.reload();
-        } else {
-          const d = await res.json();
-          window.appAlert(d.error || t.failed);
-        }
-      } catch {
-        window.appAlert(t.networkError);
-      }
-    }
-
-    // Modal helper
-    function setupModal(openId, modalId, closeId) {
-      const openBtn = document.getElementById(openId);
-      const modal = document.getElementById(modalId);
-      const closeBtn = document.getElementById(closeId);
-      if (openBtn && modal) {
-        openBtn.addEventListener('click', () => modal.classList.remove('hidden'));
-        closeBtn?.addEventListener('click', () => modal.classList.add('hidden'));
-        modal.addEventListener('click', (e) => { if (e.target === modal) modal.classList.add('hidden'); });
-      }
-    }
-
-    // Guest modal
-    setupModal('open-guest-modal-btn', 'guest-modal', 'close-guest-modal-btn');
-
-    // Report modal
-    setupModal('open-report-modal-btn', 'report-modal', 'close-report-modal-btn');
-
-    // Event delegation for buttons that carry data-action attributes.
-    // Avoids inline onclick="fn('${uuid}')" interpolation that would
-    // become an XSS vector if any value ever lost its UUID guarantee.
-    document.body.addEventListener('click', (e) => {
-      const target = e.target instanceof Element ? e.target.closest('[data-action]') : null;
-      if (!target) return;
-      const action = target.getAttribute('data-action');
-      const evId = target.getAttribute('data-event-id');
-      switch (action) {
-        case 'delete-event':
-          window.appConfirm(t.confirmDeleteEvent, () => doDeleteEvent(evId));
-          break;
-        case 'unregister-from-event':
-          unregisterFromEvent(evId);
-          break;
-        case 'register-for-event': {
-          const responsible = target.getAttribute('data-responsible') === 'true';
-          registerForEvent(evId, responsible);
-          break;
-        }
-        case 'unlock-event':
-          window.appConfirm(t.confirmUnlockEvent, () => doUnlockEvent());
-          break;
-      }
-    });
-
-    // Lock dialog toggling
-    document.addEventListener('click', (e) => {
-      const target = e.target instanceof Element ? e.target : null;
-      if (!target) return;
-      if (target.closest('[data-action="show-lock-dialog"]')) {
-        showLockDialog();
-      }
-    });
-  </script>
+  <script is:inline set:html={eventScript}></script>
 </BaseLayout>

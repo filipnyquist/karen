@@ -15,12 +15,10 @@ export default defineConfig({
             scriptDirective: {
                 // 'self' is NOT added by default in Astro 7 — must be explicit.
                 // Turnstile is added per-page via Astro.csp?.insertScriptResource()
-                // TODO: remove 'unsafe-inline' once all inline scripts are either
-                // externalised or migrated to Astro.csp.insertScriptHash() with the
-                // matching hash. Currently inline <script define:vars> blocks in
-                // login/register/pubteam/event/BaseLayout render a per-page hash
-                // that we don't compute.
-                resources: ["'self'", "'unsafe-inline'"],
+                // User-authored inline scripts (login/register/BaseLayout/event/
+                // pubteam) are whitelisted via Astro.csp.insertScriptHash() in
+                // each page's frontmatter.
+                resources: ["'self'"],
             },
             styleDirective: {
                 // Astro auto-hashes inline <style> emitted by .astro files;
