@@ -84,17 +84,6 @@ docker compose rm -f legacy-db legacy-import
 - The importer reads `ENCRYPTION_KEY` from `.env` (via `env_file`) — guest SSNs in the dump get encrypted on the way into Postgres.
 - A successful import from the prod dump typically yields ~1.5k placeholder users, ~1k events, ~7.5k worker registrations, ~2.5k guest registrations, ~1k tickets, ~1k reports. The `legacy_mappings` table records the old MySQL primary key for every imported row.
 
-## Traefik
-
-`docker-compose.yml` wires `app` to the host-wide Traefik instance via Traefik labels + the external `traefik-network`. The existing `3000:3000` host publish stays as a fallback. Traefik routes `https://karen.nyqui.st` → `karen-app-1:3000` with a Let's Encrypt cert; the `compresstraefik` middleware turns on gzip.
-
-To edit the hostname or hostname → container mapping, change the `traefik.http.routers.karen.rule=Host(...)` label. The `app` service sits on two networks:
-
-- `karen-net` (the project default) — to reach `db:5432`.
-- `traefik-network` (external) — so Traefik can discover it.
-
-`db` + `migrate` only join `karen-net` because they don't need to be reached from the proxy.
-
 ## Environment Variables
 
 All vars live in `.env` (gitignored). See `.env.example` for a template.
@@ -230,14 +219,14 @@ Starts `app` (port 4321), `db` (Postgres 16, port 5432), and `migrate` (runs `bu
 
 ### `docker-compose.yml` — production stack
 
-Multi-stage build with no source bind mounts. Joins the host Traefik so the public hostname routes into the container. Set env vars in `.env` (see `.env.example`).
+Multi-stage build with no source bind mounts. Set env vars in `.env` (see `.env.example`).
 
 ```bash
 cp .env.example .env          # edit with production values
 docker compose up --build -d
 ```
 
-Starts `app` (port 3000, via Node HTTP + Bun — fronted by Traefik on the public hostname via the `traefik` labels; see [Traefik](#traefik)), `db` (Postgres 16 with persistent `pgdata` volume), and `migrate` (runs once and exits).
+Starts `app` (port 3000, via Node HTTP + Bun), `db` (Postgres 16 with persistent `pgdata` volume), and `migrate` (runs once and exits).
 
 **Running migrations on an existing database:**
 

@@ -1,10 +1,6 @@
 services:
   app:
     build: .
-    # Traefik routes karen.nyqui.st -> :3000 via traefik-network. The 3000:3000
-    # host publish below stays as a fallback for direct access when Traefik is
-    # down; Traefik itself never uses it (it talks to containers on
-    # traefik-network by container name + container port).
     ports:
       - "3000:3000"
     # DATABASE_SSL=disable is required: the release image bakes
@@ -19,7 +15,7 @@ services:
       - SMTP_USER=${SMTP_USER:-}
       - SMTP_PASS=${SMTP_PASS:-}
       - SMTP_FROM=${SMTP_FROM:-noreply@karen.se}
-      - BASE_URL=${BASE_URL:-https://karen.nyqui.st}
+      - BASE_URL=${BASE_URL:-http://localhost:3000}
       - SESSION_SECRET=${SESSION_SECRET:-change-me-in-production}
       - SESSION_MAX_AGE_MS=${SESSION_MAX_AGE_MS:-2592000000}
       - DEFAULT_MAX_GUESTS=${DEFAULT_MAX_GUESTS:-50}
@@ -27,29 +23,6 @@ services:
       - TURNSTILE_SITEKEY=${TURNSTILE_SITEKEY:-}
       - TURNSTILE_SECRET=${TURNSTILE_SECRET:-}
       - UPLOAD_DIR=/app/uploads
-    # app lives on BOTH karen-net (to reach db:5432) and traefik-network
-    # (so Traefik can discover and route to it). db + migrate stay on
-    # karen-net only — they don't need to be reached from the proxy.
-    networks:
-      - default
-      - traefik
-    # Traefik labels — pattern matches karen3/docker-compose.yml so the
-    # Karen instance sits in the same Traefik routing topology as the
-    # other services on this host (vaultwarden, portainer, photoprism...).
-    # Letsencrypt resolves certs automatically; compresstraefik turns on
-    # gzip on the way out.
-    labels:
-      - "traefik.enable=true"
-      - "traefik.docker.network=traefik-network"
-      - "traefik.http.routers.karen.rule=Host(`karen.nyqui.st`)"
-      - "traefik.http.routers.karen.service=karen"
-      - "traefik.http.routers.karen.entrypoints=websecure"
-      - "traefik.http.routers.karen.tls=true"
-      - "traefik.http.routers.karen.tls.certresolver=letsencrypt"
-      - "traefik.http.routers.karen.middlewares=compresstraefik"
-      - "traefik.http.middlewares.compresstraefik.compress=true"
-      - "traefik.http.services.karen.loadbalancer.server.port=3000"
-      - "traefik.http.services.karen.loadbalancer.passhostheader=true"
     volumes:
       - uploads:/app/uploads
     depends_on:
@@ -124,8 +97,6 @@ services:
   legacy-db:
     image: mariadb:11
     profiles: ["import"]
-    networks:
-      - default
     environment:
       - MARIADB_ROOT_PASSWORD=root
       - MARIADB_DATABASE=karen
@@ -145,8 +116,6 @@ services:
   legacy-import:
     build: .
     profiles: ["import"]
-    networks:
-      - default
     env_file:
       - .env
     environment:
@@ -166,17 +135,7 @@ volumes:
   uploads:
   legacy_db_data:
 
-# Two networks:
-# - `default` (karen-net): the historical project-internal network. db +
-#   app + migrate + legacy-db + legacy-import all join it so `db:5432`
-#   resolves inside this compose and so dev compose can join it too.
-# - `traefik` (traefik-network): the host-wide Traefik routing network.
-#   `app` joins it so Traefik 3.6.9 (running on this host) can route
-#   karen.nyqui.st -> karen-app-1:3000. `external: true` because the
-#   Traefik stack already created this network before Karen did.
+# Fixed network name so the dev/import stacks can join it from any cwd.
 networks:
   default:
     name: karen-net
-  traefik:
-    external: true
-    name: traefik-network
