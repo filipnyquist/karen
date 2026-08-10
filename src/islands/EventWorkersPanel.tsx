@@ -93,20 +93,20 @@ export default function EventWorkersPanel({
                 </p>
             ) : (
                 <div class="overflow-x-auto">
-                    <table class="w-full text-sm">
+                    <table class="w-full text-sm min-w-[36rem]">
                         <thead class="bg-gray-50 dark:bg-gray-800">
                             <tr>
-                                <th class="px-4 py-2.5 text-left font-medium text-gray-500 dark:text-gray-400" />
-                                <th class="px-4 py-2.5 text-left font-medium text-gray-500 dark:text-gray-400">
+                                <th class="px-4 py-2.5 text-left font-medium text-gray-500 dark:text-gray-400 whitespace-nowrap" />
+                                <th class="px-4 py-2.5 text-left font-medium text-gray-500 dark:text-gray-400 whitespace-nowrap">
                                     {t["auth.nickname"] || "Nickname"}
                                 </th>
-                                <th class="px-4 py-2.5 text-left font-medium text-gray-500 dark:text-gray-400">
+                                <th class="px-4 py-2.5 text-left font-medium text-gray-500 dark:text-gray-400 whitespace-nowrap">
                                     {t["auth.name"] || "Name"}
                                 </th>
-                                <th class="px-4 py-2.5 text-left font-medium text-gray-500 dark:text-gray-400">
+                                <th class="px-4 py-2.5 text-left font-medium text-gray-500 dark:text-gray-400 whitespace-nowrap">
                                     {t["event.roles"] || "Roles"}
                                 </th>
-                                <th class="px-4 py-2.5" />
+                                <th class="px-4 py-2.5 whitespace-nowrap" />
                             </tr>
                         </thead>
                         <tbody class="divide-y divide-gray-200 dark:divide-gray-700">
@@ -115,7 +115,7 @@ export default function EventWorkersPanel({
                                     key={w.id}
                                     class="hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors"
                                 >
-                                    <td class="px-4 py-2.5">
+                                    <td class="px-4 py-2.5 whitespace-nowrap">
                                         <a href={`/profile/${w.id}`}>
                                             {w.profilePic ? (
                                                 <img
@@ -136,7 +136,7 @@ export default function EventWorkersPanel({
                                             )}
                                         </a>
                                     </td>
-                                    <td class="px-4 py-2.5">
+                                    <td class="px-4 py-2.5 whitespace-nowrap">
                                         <a
                                             href={`/profile/${w.id}`}
                                             class="text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 font-medium"
@@ -144,10 +144,10 @@ export default function EventWorkersPanel({
                                             {w.nickname ?? "-"}
                                         </a>
                                     </td>
-                                    <td class="px-4 py-2.5 text-gray-700 dark:text-gray-300">
+                                    <td class="px-4 py-2.5 text-gray-700 dark:text-gray-300 whitespace-nowrap">
                                         {w.name ?? "-"}
                                     </td>
-                                    <td class="px-4 py-2.5">
+                                    <td class="px-4 py-2.5 whitespace-nowrap">
                                         <div class="flex items-center gap-1">
                                             {w.responsible && (
                                                 <span class="group relative inline-flex">
@@ -206,7 +206,7 @@ export default function EventWorkersPanel({
                                             )}
                                         </div>
                                     </td>
-                                    <td class="px-4 py-2.5 text-right">
+                                    <td class="px-4 py-2.5 text-right whitespace-nowrap">
                                         {canManage &&
                                             w.id !== currentUserId && (
                                                 <button
