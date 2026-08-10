@@ -80,6 +80,7 @@ export default {
         responsible: "Responsible",
         roles: "Roles",
         pubWorker: "Pub Worker",
+        aas: "AAS (Alcohol serving)",
         workers: "Workers",
         removeWorker: "Remove worker",
         confirmRemoveWorker: "Remove this worker from the event?",

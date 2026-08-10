@@ -81,6 +81,7 @@ export default {
         responsible: "Ansvarig",
         roles: "Roller",
         pubWorker: "Jobbare",
+        aas: "AAS (Alkoholservering)",
         workers: "Jobbare",
         removeWorker: "Ta bort jobbare",
         confirmRemoveWorker: "Ta bort denna jobbare från evenemanget?",

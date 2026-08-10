@@ -11,11 +11,12 @@
 // client never sees a full name for a non-logged-in viewer even
 // with DevTools open.
 
-import { count, desc, eq, inArray } from "drizzle-orm";
+import { and, count, desc, eq, inArray, or } from "drizzle-orm";
 import { Elysia, t } from "elysia";
 import { db } from "../../db";
 import {
     comments,
+    educationTypes,
     events,
     guestRegistrations,
     userEducations,
@@ -52,19 +53,63 @@ export const eventLiveRoutes = new Elysia({ prefix: "/events" })
                     workerRegistrations.createdAt,
                 );
 
-            // Mirror the SSR page: include a `hasPubWorker` boolean so
-            // the island can render the 🍺 badge without a second fetch.
+            // Mirror the SSR page: include per-worker education flags so
+            // the island can render the 🍺 / 🎓 badges without a second
+            // fetch. Looks up pub_worker + aas education_type ids in one
+            // shot and filters user_educations accordingly — the prior
+            // version didn't filter by type, so any education (including
+            // just `responsible`) made hasPubWorker = true.
             const workerIds = rows.map((r) => r.id);
-            const pubWorkerEducations =
+            const eduTypes =
                 workerIds.length > 0
                     ? await db
-                          .select({ userId: userEducations.userId })
-                          .from(userEducations)
-                          .where(inArray(userEducations.userId, workerIds))
+                          .select({
+                              id: educationTypes.id,
+                              name: educationTypes.name,
+                          })
+                          .from(educationTypes)
                     : [];
-            const pubWorkerSet = new Set(
-                pubWorkerEducations.map((e) => e.userId),
-            );
+            const pubWorkerTypeId = eduTypes.find(
+                (t) => t.name === "pub_worker",
+            )?.id;
+            const aasTypeId = eduTypes.find((t) => t.name === "aas")?.id;
+
+            const eduRows =
+                workerIds.length > 0
+                    ? await db
+                          .select({
+                              userId: userEducations.userId,
+                              educationTypeId: userEducations.educationTypeId,
+                          })
+                          .from(userEducations)
+                          .where(
+                              and(
+                                  inArray(userEducations.userId, workerIds),
+                                  or(
+                                      pubWorkerTypeId
+                                          ? eq(
+                                                userEducations.educationTypeId,
+                                                pubWorkerTypeId,
+                                            )
+                                          : undefined,
+                                      aasTypeId
+                                          ? eq(
+                                                userEducations.educationTypeId,
+                                                aasTypeId,
+                                            )
+                                          : undefined,
+                                  ),
+                              ),
+                          )
+                    : [];
+            const pubWorkerSet = new Set<string>();
+            const aasSet = new Set<string>();
+            for (const row of eduRows) {
+                if (pubWorkerTypeId && row.educationTypeId === pubWorkerTypeId)
+                    pubWorkerSet.add(row.userId);
+                if (aasTypeId && row.educationTypeId === aasTypeId)
+                    aasSet.add(row.userId);
+            }
             return rows.map((r) => ({
                 ...r,
                 // Server-side anonymization: a non-logged-in viewer gets
@@ -74,6 +119,7 @@ export const eventLiveRoutes = new Elysia({ prefix: "/events" })
                     ? r.name
                     : (anonymizeName(r.name, false) as string | null),
                 hasPubWorker: pubWorkerSet.has(r.id),
+                hasAas: aasSet.has(r.id),
             }));
         },
         {

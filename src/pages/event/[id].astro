@@ -19,7 +19,7 @@ import {
   events, locations, eventStates, workerRegistrations, guestRegistrations,
   comments, users, reports, userEducations, educationTypes
 } from '../../db/schema';
-import { eq, and, sql, desc, inArray } from 'drizzle-orm';
+import { eq, and, or, sql, desc, inArray } from 'drizzle-orm';
 import { isAdmin } from '../../api/middleware/auth';
 
 const t = Astro.locals.t;
@@ -69,15 +69,41 @@ const workers = await db
   .where(eq(workerRegistrations.eventId, eventId))
   .orderBy(desc(workerRegistrations.responsible), workerRegistrations.createdAt);
 
-// Fetch pub_worker education for workers
+// Fetch education flags for the workers (pub_worker + aas). Looks up
+// the education_type ids once and queries with both filters in one shot,
+// so we don't pull every user_educations row for these users.
 const workerIds = workers.map(w => w.id);
-const pubWorkerEducations = workerIds.length > 0
+const eduTypeRows = workerIds.length > 0
   ? await db
-      .select({ userId: userEducations.userId })
-      .from(userEducations)
-      .where(inArray(userEducations.userId, workerIds))
+      .select({ id: educationTypes.id, name: educationTypes.name })
+      .from(educationTypes)
   : [];
-const pubWorkerUserIds = new Set(pubWorkerEducations.map(e => e.userId));
+const pubWorkerTypeId = eduTypeRows.find((t) => t.name === 'pub_worker')?.id;
+const aasTypeId = eduTypeRows.find((t) => t.name === 'aas')?.id;
+
+const eduRows = workerIds.length > 0
+  ? await db
+      .select({
+        userId: userEducations.userId,
+        educationTypeId: userEducations.educationTypeId,
+      })
+      .from(userEducations)
+      .where(
+        and(
+          inArray(userEducations.userId, workerIds),
+          or(
+            pubWorkerTypeId ? eq(userEducations.educationTypeId, pubWorkerTypeId) : undefined,
+            aasTypeId ? eq(userEducations.educationTypeId, aasTypeId) : undefined,
+          ),
+        ),
+      )
+  : [];
+const hasPubWorker = new Set<string>();
+const hasAas = new Set<string>();
+for (const row of eduRows) {
+  if (pubWorkerTypeId && row.educationTypeId === pubWorkerTypeId) hasPubWorker.add(row.userId);
+  if (aasTypeId && row.educationTypeId === aasTypeId) hasAas.add(row.userId);
+}
 
 // Shape workers for the live-refresh island. Anonymizes the real
 // name for non-authenticated viewers so the client never sees a full
@@ -90,7 +116,8 @@ const initialWorkers: Worker[] = workers.map((w) => ({
         : (anonymizeName(w.name, false) as string | null),
     profilePic: w.profilePic,
     responsible: !!w.responsible,
-    hasPubWorker: pubWorkerUserIds.has(w.id),
+    hasPubWorker: hasPubWorker.has(w.id),
+    hasAas: hasAas.has(w.id),
     createdAt: w.createdAt.toISOString(),
 }));
 

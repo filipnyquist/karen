@@ -16,6 +16,7 @@ export interface Worker {
     profilePic: string | null;
     responsible: boolean;
     hasPubWorker: boolean;
+    hasAas: boolean;
     createdAt: string;
 }
 
@@ -181,6 +182,24 @@ export default function EventWorkersPanel({
                                                     >
                                                         {t["event.pubWorker"] ??
                                                             "Pub Worker"}
+                                                        <span class="absolute -top-1 left-1/2 h-2 w-2 -translate-x-1/2 rotate-45 bg-gray-900 dark:bg-gray-700" />
+                                                    </span>
+                                                </span>
+                                            )}
+                                            {w.hasAas && (
+                                                <span class="group relative inline-flex">
+                                                    <span
+                                                        class="cursor-default"
+                                                        aria-hidden="true"
+                                                    >
+                                                        🎓
+                                                    </span>
+                                                    <span
+                                                        role="tooltip"
+                                                        class="pointer-events-none absolute left-1/2 top-full z-10 mt-1 -translate-x-1/2 whitespace-nowrap rounded bg-gray-900 px-2 py-1 text-xs font-medium text-white opacity-0 shadow-sm transition-opacity duration-150 group-hover:opacity-100 dark:bg-gray-700"
+                                                    >
+                                                        {t["event.aas"] ??
+                                                            "AAS"}
                                                         <span class="absolute -top-1 left-1/2 h-2 w-2 -translate-x-1/2 rotate-45 bg-gray-900 dark:bg-gray-700" />
                                                     </span>
                                                 </span>
