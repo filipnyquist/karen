@@ -21,6 +21,9 @@ interface Guest {
     guestSsn: string | null;
     reporterId?: string;
     createdAt: string;
+    /** Present only on the /all endpoint (joined from users). */
+    reporterName?: string | null;
+    reporterNickname?: string | null;
 }
 
 interface AddGuestForm {
@@ -521,59 +524,110 @@ export default function GuestManager({
                             </p>
                         </div>
                     ) : (
-                        <ul class="divide-y divide-gray-200 dark:divide-gray-700 border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden">
-                            {allGuests.map((guest) => (
-                                <li
-                                    key={guest.id}
-                                    class="flex items-center justify-between px-4 py-3 bg-white dark:bg-gray-900 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
-                                >
-                                    <div class="min-w-0 flex-1">
-                                        <p class="font-medium text-gray-900 dark:text-white truncate">
-                                            {guest.guestName}
-                                        </p>
-                                        <div class="text-xs text-gray-500 dark:text-gray-400 space-x-3">
-                                            {guest.guestEmail && (
-                                                <span>{guest.guestEmail}</span>
-                                            )}
-                                            {guest.guestSsn && (
-                                                <span>
-                                                    {t["guest.ssn"] || "SSN"}:{" "}
-                                                    {guest.guestSsn}
-                                                </span>
-                                            )}
-                                        </div>
-                                    </div>
-                                    {/* Only admins can remove guests in the All Guests view */}
-                                    {isAdmin && (
-                                        <button
-                                            type="button"
-                                            onClick={() =>
-                                                handleRemoveGuest(guest.id)
-                                            }
-                                            class="ml-4 flex-shrink-0 p-1.5 rounded-md text-red-500 hover:bg-red-50 hover:text-red-700 dark:hover:bg-red-900/30 dark:hover:text-red-400 transition-colors"
-                                            title={
-                                                t["guest.removeGuest"] ||
-                                                "Remove guest"
-                                            }
-                                        >
-                                            <svg
-                                                class="w-5 h-5"
-                                                fill="none"
-                                                stroke="currentColor"
-                                                viewBox="0 0 24 24"
+                        <div class="border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden bg-white dark:bg-gray-900">
+                            <div class="overflow-x-auto overflow-y-hidden">
+                                <table class="w-full text-sm">
+                                    <thead class="bg-gray-50 dark:bg-gray-800">
+                                        <tr>
+                                            <th class="px-4 py-2.5 text-left font-medium text-gray-500 dark:text-gray-400 whitespace-nowrap">
+                                                {t["auth.name"] || "Name"}
+                                            </th>
+                                            <th class="px-4 py-2.5 text-left font-medium text-gray-500 dark:text-gray-400 whitespace-nowrap">
+                                                {t["auth.email"] || "Email"}
+                                            </th>
+                                            <th class="px-4 py-2.5 text-left font-medium text-gray-500 dark:text-gray-400 whitespace-nowrap">
+                                                {t["guest.ssn"] || "SSN"}
+                                            </th>
+                                            <th class="px-4 py-2.5 text-left font-medium text-gray-500 dark:text-gray-400 whitespace-nowrap">
+                                                {t["guest.addedBy"] ||
+                                                    "Added by"}
+                                            </th>
+                                            <th class="px-4 py-2.5 text-left font-medium text-gray-500 dark:text-gray-400 whitespace-nowrap">
+                                                {t["guest.addedAt"] || "Added"}
+                                            </th>
+                                            <th class="px-4 py-2.5 whitespace-nowrap" />
+                                        </tr>
+                                    </thead>
+                                    <tbody class="divide-y divide-gray-200 dark:divide-gray-700">
+                                        {allGuests.map((guest) => (
+                                            <tr
+                                                key={guest.id}
+                                                class="hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors"
                                             >
-                                                <path
-                                                    stroke-linecap="round"
-                                                    stroke-linejoin="round"
-                                                    stroke-width="2"
-                                                    d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
-                                                />
-                                            </svg>
-                                        </button>
-                                    )}
-                                </li>
-                            ))}
-                        </ul>
+                                                <td class="px-4 py-2.5 font-medium text-gray-900 dark:text-white whitespace-nowrap">
+                                                    {guest.guestName}
+                                                </td>
+                                                <td class="px-4 py-2.5 text-gray-700 dark:text-gray-300 whitespace-nowrap">
+                                                    {guest.guestEmail || "-"}
+                                                </td>
+                                                <td class="px-4 py-2.5 text-gray-700 dark:text-gray-300 whitespace-nowrap font-mono text-xs">
+                                                    {guest.guestSsn || "-"}
+                                                </td>
+                                                <td class="px-4 py-2.5 text-gray-700 dark:text-gray-300 whitespace-nowrap">
+                                                    <a
+                                                        href={`/profile/${guest.reporterId}`}
+                                                        class="text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300"
+                                                    >
+                                                        {guest.reporterNickname ||
+                                                            guest.reporterName ||
+                                                            "-"}
+                                                    </a>
+                                                </td>
+                                                <td class="px-4 py-2.5 text-gray-500 dark:text-gray-400 whitespace-nowrap">
+                                                    {new Date(
+                                                        guest.createdAt,
+                                                    ).toLocaleString(
+                                                        undefined,
+                                                        {
+                                                            year: "numeric",
+                                                            month: "short",
+                                                            day: "numeric",
+                                                            hour: "2-digit",
+                                                            minute: "2-digit",
+                                                        },
+                                                    )}
+                                                </td>
+                                                <td class="px-4 py-2.5 text-right whitespace-nowrap">
+                                                    {/* Only admins can remove guests in the All Guests view */}
+                                                    {isAdmin && (
+                                                        <button
+                                                            type="button"
+                                                            onClick={() =>
+                                                                handleRemoveGuest(
+                                                                    guest.id,
+                                                                )
+                                                            }
+                                                            class="p-1.5 rounded-md text-red-500 hover:bg-red-50 hover:text-red-700 dark:hover:bg-red-900/30 dark:hover:text-red-400 transition-colors"
+                                                            title={
+                                                                t[
+                                                                    "guest"
+                                                                        .removeGuest
+                                                                ] ||
+                                                                "Remove guest"
+                                                            }
+                                                        >
+                                                            <svg
+                                                                class="w-5 h-5"
+                                                                fill="none"
+                                                                stroke="currentColor"
+                                                                viewBox="0 0 24 24"
+                                                            >
+                                                                <path
+                                                                    stroke-linecap="round"
+                                                                    stroke-linejoin="round"
+                                                                    stroke-width="2"
+                                                                    d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+                                                                />
+                                                            </svg>
+                                                        </button>
+                                                    )}
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
                     )}
                 </div>
             )}

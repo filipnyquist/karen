@@ -250,6 +250,8 @@ export default {
         myGuests: "Mina gäster",
         allGuests: "Alla gäster",
         adminOverride: "Admin: ignorera gästgräns",
+        addedBy: "Tillagd av",
+        addedAt: "Tillagd",
         needVerification:
             "Du behöver verifiera ditt konto för att lägga till gäster.",
     },

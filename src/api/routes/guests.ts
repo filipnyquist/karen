@@ -4,7 +4,11 @@ import { and, eq } from "drizzle-orm";
 import { Elysia, t } from "elysia";
 import { config } from "../../config";
 import { db } from "../../db";
-import { guestRegistrations, workerRegistrations } from "../../db/schema";
+import {
+    guestRegistrations,
+    users,
+    workerRegistrations,
+} from "../../db/schema";
 import { decrypt, encrypt, hashSsn } from "../../lib/encryption";
 import {
     getEventById,
@@ -163,12 +167,27 @@ export const guestRoutes = new Elysia()
                     );
                 }
 
-                const result = await db
-                    .select()
+                const rows = await db
+                    .select({
+                        id: guestRegistrations.id,
+                        eventId: guestRegistrations.eventId,
+                        reporterId: guestRegistrations.reporterId,
+                        guestName: guestRegistrations.guestName,
+                        guestEmail: guestRegistrations.guestEmail,
+                        guestSsn: guestRegistrations.guestSsn,
+                        guestSsnHash: guestRegistrations.guestSsnHash,
+                        createdAt: guestRegistrations.createdAt,
+                        reporterName: users.name,
+                        reporterNickname: users.nickname,
+                    })
                     .from(guestRegistrations)
+                    .innerJoin(
+                        users,
+                        eq(users.id, guestRegistrations.reporterId),
+                    )
                     .where(eq(guestRegistrations.eventId, params.eventId));
                 return Promise.all(
-                    result.map(async (g) => ({
+                    rows.map(async (g) => ({
                         ...g,
                         guestSsn: g.guestSsn ? await decrypt(g.guestSsn) : null,
                     })),

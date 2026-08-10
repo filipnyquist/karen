@@ -248,6 +248,8 @@ export default {
         myGuests: "My Guests",
         allGuests: "All Guests",
         adminOverride: "Admin: override guest limit",
+        addedBy: "Added by",
+        addedAt: "Added",
         needVerification: "You need to verify your account to add guests.",
     },
     team: {
