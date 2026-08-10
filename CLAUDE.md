@@ -29,4 +29,12 @@ Two files, each one purpose:
 - `docker-compose.yml` — production stack (app + db + migrate). Also defines two opt-in services behind the `import` profile: `legacy-db` (MariaDB with the pykaren dump auto-loaded) and `legacy-import` (one-shot importer that reads MySQL, writes Postgres). The operator runs `docker compose --profile import up legacy-import` manually after placing `karen_dump.sql` in the project root. See the comment block on `legacy-db` in `docker-compose.yml` for the full workflow.
 - `docker-compose.dev.yml` — dev stack with hot reload; uses `Dockerfile.dev`.
 
-Both stacks share the fixed `karen-net` network so the legacy importer can reach the dev/prod `db` regardless of cwd. To import against the dev stack instead of prod, run the dev stack first (`docker compose -f docker-compose.dev.yml up -d db`), then `docker compose --profile import up legacy-import` from the project root.
+Both stacks share the fixed `karen-net` network so the legacy importer can reach the dev/prod `db` regardless of cwd. To run the importer against the dev stack (you usually want to do this first to validate), bring up the dev `db` + `migrate`, then invoke the importer through the dev compose file:
+
+```
+docker compose -f docker-compose.dev.yml up -d db migrate
+docker compose -f docker-compose.dev.yml --profile import up legacy-import
+docker compose -f docker-compose.dev.yml --profile import down
+```
+
+To run against the prod stack, omit the `-f` flag (it defaults to `docker-compose.yml`).

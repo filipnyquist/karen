@@ -65,10 +65,67 @@ services:
         condition: service_healthy
     restart: "no"
 
+  # ---------------------------------------------------------------------------
+  # Legacy importer (opt-in profile: "import"). Mirrors the same services in
+  # docker-compose.yml, but pointed at the dev `db` and using the dev image
+  # + dev-scoped volume. Bring up the dev stack first (so `db` + `migrate`
+  # run), then invoke the importer:
+  #
+  #   docker compose -f docker-compose.dev.yml up -d db migrate
+  #   docker compose -f docker-compose.dev.yml --profile import up legacy-import
+  #   docker compose -f docker-compose.dev.yml --profile import down
+  #
+  # Both compose files put legacy-import behind `profiles: ["import"]`, so
+  # `docker compose -f docker-compose.dev.yml up` (no profile) never starts
+  # the MariaDB or the importer.
+  #
+  # No DATABASE_SSL override needed here: the dev image doesn't bake
+  # NODE_ENV=production, so the postgres driver defaults to SSL=disabled.
+  # ---------------------------------------------------------------------------
+  legacy-db:
+    image: mariadb:11
+    profiles: ["import"]
+    environment:
+      - MARIADB_ROOT_PASSWORD=root
+      - MARIADB_DATABASE=karen
+      - MARIADB_USER=karen
+      - MARIADB_PASSWORD=karen
+    volumes:
+      - legacy_db_data_dev:/var/lib/mysql
+      - ./karen_dump.sql:/docker-entrypoint-initdb.d/01-dump.sql:ro
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 60s
+    restart: unless-stopped
+
+  legacy-import:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    profiles: ["import"]
+    env_file:
+      - .env
+    environment:
+      - DATABASE_URL=postgresql://karen:karen@db:5432/karen
+      - LEGACY_DATABASE_URL=mysql://karen:karen@legacy-db:3306/karen
+    command: ["bun", "src/db/import-legacy.ts"]
+    depends_on:
+      legacy-db:
+        condition: service_healthy
+      db:
+        condition: service_healthy
+    restart: "no"
+
 volumes:
   pgdata_dev:
+  legacy_db_data_dev:
 
-# Fixed network name so docker-compose.import.yml can join it from any cwd.
+# Fixed network name so the dev stack can join the prod stack's `karen-net`
+# (and vice versa) — needed for the import profile to reach `db:5432`
+# regardless of cwd.
 networks:
   default:
     name: karen-net
