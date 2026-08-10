@@ -71,7 +71,9 @@ volumes:
 # Attach to the prod `traefik-network` so the importer can reach the
 # prod `db` (postgres) by service name. The dev stack uses `karen-net`
 # so if you're running the import against the dev stack, override this
-# to `karen-net` instead.
+# to `karen-net` instead. `external: true` is required because the
+# prod stack already created `traefik-network` (see CLAUDE.md).
 networks:
   default:
     name: traefik-network
+    external: true
