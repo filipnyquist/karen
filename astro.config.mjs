@@ -15,7 +15,12 @@ export default defineConfig({
             scriptDirective: {
                 // 'self' is NOT added by default in Astro 7 — must be explicit.
                 // Turnstile is added per-page via Astro.csp?.insertScriptResource()
-                resources: ["'self'"],
+                // TODO: remove 'unsafe-inline' once all inline scripts are either
+                // externalised or migrated to Astro.csp.insertScriptHash() with the
+                // matching hash. Currently inline <script define:vars> blocks in
+                // login/register/pubteam/event/BaseLayout render a per-page hash
+                // that we don't compute.
+                resources: ["'self'", "'unsafe-inline'"],
             },
             styleDirective: {
                 // Astro auto-hashes inline <style> emitted by .astro files;
@@ -31,6 +36,8 @@ export default defineConfig({
                 "base-uri 'self'",
                 "form-action 'self'",
                 "frame-ancestors 'none'",
+                // Turnstile renders inside an iframe at challenges.cloudflare.com.
+                "frame-src 'self' https://challenges.cloudflare.com",
             ],
         },
     },

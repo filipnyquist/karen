@@ -40,7 +40,7 @@ if (turnstileSitekey) {
         </div>
       )}
 
-      <form id="register-form" class="space-y-4">
+      <form id="register-form" method="post" action="/register" class="space-y-4">
         <div>
           <label for="email" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
             {t('auth.email')}
