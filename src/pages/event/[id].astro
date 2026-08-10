@@ -365,8 +365,8 @@ const eventScript = `(function(){
   setupModal('open-report-modal-btn', 'report-modal', 'close-report-modal-btn');
 
   // Event delegation for buttons that carry data-action attributes.
-  // Avoids inline onclick="fn('${uuid}')" interpolation that would
-  // become an XSS vector if any value ever lost its UUID guarantee.
+  // Avoids inline onclick="fn('<id>')" interpolation that would
+  // become an XSS vector if any value ever lost its ID guarantee.
   document.body.addEventListener('click', (e) => {
     const target = e.target instanceof Element ? e.target.closest('[data-action]') : null;
     if (!target) return;
