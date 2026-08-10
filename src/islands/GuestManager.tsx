@@ -568,8 +568,8 @@ export default function GuestManager({
                                                         href={`/profile/${guest.reporterId}`}
                                                         class="text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300"
                                                     >
-                                                        {guest.reporterNickname ||
-                                                            guest.reporterName ||
+                                                        {guest.reporterName ||
+                                                            guest.reporterNickname ||
                                                             "-"}
                                                     </a>
                                                 </td>
