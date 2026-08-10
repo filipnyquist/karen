@@ -520,6 +520,10 @@ export const adminRoutes = new Elysia({ prefix: "/admin" })
             const limit = parseInt(query?.limit ?? "50", 10);
             const offset = parseInt(query?.offset ?? "0", 10);
 
+            // Legacy placeholder rows (created by import-legacy.ts, targeted
+            // for the migration flow at /admin/migrate) are filtered out of
+            // the admin user table — admins manage real accounts here. The
+            // dedicated migration page is the place to inspect placeholders.
             const result = await db
                 .select({
                     id: users.id,
@@ -532,6 +536,7 @@ export const adminRoutes = new Elysia({ prefix: "/admin" })
                     createdAt: users.createdAt,
                 })
                 .from(users)
+                .where(eq(users.isLegacy, false))
                 .limit(limit)
                 .offset(offset);
 
@@ -547,7 +552,8 @@ export const adminRoutes = new Elysia({ prefix: "/admin" })
     .get("/education-types", async () => {
         return db.select().from(educationTypes);
     })
-    // Search users
+    // Search users (same legacy-placeholder filter as the list endpoint —
+    // see comment on GET /users above for the rationale).
     .get("/users/search/:query", async ({ params }) => {
         const searchTerm = `%${params.query}%`;
         return db
@@ -563,10 +569,13 @@ export const adminRoutes = new Elysia({ prefix: "/admin" })
             })
             .from(users)
             .where(
-                or(
-                    ilike(users.email, searchTerm),
-                    ilike(users.name, searchTerm),
-                    ilike(users.nickname, searchTerm),
+                and(
+                    eq(users.isLegacy, false),
+                    or(
+                        ilike(users.email, searchTerm),
+                        ilike(users.name, searchTerm),
+                        ilike(users.nickname, searchTerm),
+                    ),
                 ),
             )
             .limit(50);

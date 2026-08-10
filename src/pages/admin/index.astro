@@ -5,6 +5,7 @@ import AdminDashboard from '../../islands/AdminDashboard';
 import { flattenTranslations } from '../../i18n/index';
 import { db } from '../../db';
 import { users, educationTypes } from '../../db/schema';
+import { eq } from 'drizzle-orm';
 import { isSuperadmin } from '../../api/middleware/auth';
 import { requireAdmin } from '../../lib/guards';
 
@@ -16,6 +17,9 @@ const currentUser = guard;
 
 const currentUserIsSuperadmin = isSuperadmin(currentUser.role);
 
+// Filter out legacy placeholder rows (created by the importer) so the
+// admin user table only shows real accounts. Legacy placeholders are
+// browsable via /admin/migrate.
 const allUsers = await db
   .select({
     id: users.id,
@@ -28,6 +32,7 @@ const allUsers = await db
     createdAt: users.createdAt,
   })
   .from(users)
+  .where(eq(users.isLegacy, false))
   .orderBy(users.createdAt);
 
 const eduTypes = await db.select().from(educationTypes);
