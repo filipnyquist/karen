@@ -51,11 +51,77 @@ services:
         condition: service_healthy
     restart: "no"
 
+  # ---------------------------------------------------------------------------
+  # Legacy importer (opt-in profile: "import"). Brings up an isolated MariaDB
+  # with the pykaren dump auto-loaded on first start, runs the TypeScript
+  # importer once, and exits. The importer reads from legacy-db (MySQL) and
+  # writes to db (Postgres) over the shared karen-net.
+  #
+  # Usage (operator runs these manually — NOT part of `up`/`down`):
+  #
+  #   1. Place `karen_dump.sql` at the project root.
+  #   2. Make sure the prod `db` is up and migrated
+  #      (`docker compose up -d db app`).
+  #   3. Run the importer:
+  #        docker compose --profile import up legacy-import
+  #        # legacy-db starts, the dump loads (~30-60 s on cold volume),
+  #        # legacy-import waits for legacy-db healthcheck, runs once,
+  #        # exits 0 on success. legacy-import has `restart: "no"`.
+  #   4. Tear down the import side (keeps prod running):
+  #        docker compose --profile import down
+  #        # wipes the legacy-db container + the legacy_db_data volume
+  #        # UNLESS you pass -v. Don't pass -v until you've confirmed the
+  #        # import succeeded — there's no way to re-import without
+  #        # reloading the dump from cold.
+  #
+  # Credentials mirror the prod db (karen:karen) so the importer can resolve
+  # `db:5432` on karen-net. DATABASE_SSL=disable is required because the
+  # release image bakes in NODE_ENV=production and the postgres driver
+  # defaults to SSL=require in production. ENCRYPTION_KEY comes from .env
+  # via env_file (the image excludes .env via .dockerignore).
+  # ---------------------------------------------------------------------------
+  legacy-db:
+    image: mariadb:11
+    profiles: ["import"]
+    environment:
+      - MARIADB_ROOT_PASSWORD=root
+      - MARIADB_DATABASE=karen
+      - MARIADB_USER=karen
+      - MARIADB_PASSWORD=karen
+    volumes:
+      - legacy_db_data:/var/lib/mysql
+      - ./karen_dump.sql:/docker-entrypoint-initdb.d/01-dump.sql:ro
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 60s
+    restart: unless-stopped
+
+  legacy-import:
+    build: .
+    profiles: ["import"]
+    env_file:
+      - .env
+    environment:
+      - DATABASE_URL=postgresql://karen:karen@db:5432/karen
+      - DATABASE_SSL=disable
+      - LEGACY_DATABASE_URL=mysql://karen:karen@legacy-db:3306/karen
+    command: ["bun", "src/db/import-legacy.ts"]
+    depends_on:
+      legacy-db:
+        condition: service_healthy
+      db:
+        condition: service_healthy
+    restart: "no"
+
 volumes:
   pgdata:
   uploads:
+  legacy_db_data:
 
-# Fixed network name so docker-compose.import.yml can join it from any cwd.
+# Fixed network name so the dev/import stacks can join it from any cwd.
 networks:
   default:
     name: karen-net

@@ -24,10 +24,9 @@ Astro SSR + Preact islands, Elysia API mounted under `/api/*`, Postgres via the 
 
 ## Compose files
 
-Three files, each one purpose:
+Two files, each one purpose:
 
-- `docker-compose.yml` — production stack (app + db + migrate).
+- `docker-compose.yml` — production stack (app + db + migrate). Also defines two opt-in services behind the `import` profile: `legacy-db` (MariaDB with the pykaren dump auto-loaded) and `legacy-import` (one-shot importer that reads MySQL, writes Postgres). The operator runs `docker compose --profile import up legacy-import` manually after placing `karen_dump.sql` in the project root. See the comment block on `legacy-db` in `docker-compose.yml` for the full workflow.
 - `docker-compose.dev.yml` — dev stack with hot reload; uses `Dockerfile.dev`.
-- `docker-compose.import.yml` — opt-in flow for importing legacy pykaren (MySQL) data; the operator runs this manually after placing `karen_dump.sql` in the project root.
 
-All three share the fixed `karen-net` network so the import stack can reach the dev/prod `db` regardless of cwd.
+Both stacks share the fixed `karen-net` network so the legacy importer can reach the dev/prod `db` regardless of cwd. To import against the dev stack instead of prod, run the dev stack first (`docker compose -f docker-compose.dev.yml up -d db`), then `docker compose --profile import up legacy-import` from the project root.
