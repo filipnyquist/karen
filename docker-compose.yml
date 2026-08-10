@@ -79,12 +79,14 @@ services:
   #        # legacy-db starts, the dump loads (~30-60 s on cold volume),
   #        # legacy-import waits for legacy-db healthcheck, runs once,
   #        # exits 0 on success. legacy-import has `restart: "no"`.
-  #   4. Tear down the import side (keeps prod running):
-  #        docker compose --profile import down
-  #        # wipes the legacy-db container + the legacy_db_data volume
-  #        # UNLESS you pass -v. Don't pass -v until you've confirmed the
-  #        # import succeeded — there's no way to re-import without
-  #        # reloading the dump from cold.
+  #   4. Tear down the import side (KEEPS prod running):
+  #        docker compose stop legacy-db legacy-import
+  #        docker compose rm -f legacy-db legacy-import
+  #        # ⚠ DO NOT use `docker compose --profile import down` — it
+  #        # looks like it would only touch the profiled services, but
+  #        # `down` ignores profiles and tears down the entire compose
+  #        # project (app, db, network, etc). Use `stop` + `rm` for the
+  #        # two legacy containers specifically. pgdata is untouched.
   #
   # Credentials mirror the prod db (karen:karen) so the importer can resolve
   # `db:5432` on karen-net. DATABASE_SSL=disable is required because the
