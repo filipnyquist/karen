@@ -691,8 +691,8 @@ Astro.csp?.insertScriptHash(sha256ScriptHash(eventScript));
 
   <!-- Guest Modal -->
   <div id="guest-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-    <div class="bg-white dark:bg-gray-900 rounded-lg w-full max-w-lg max-h-[90vh] overflow-y-auto shadow-xl mx-4">
-      <div class="sticky top-0 bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-800 px-6 py-4 flex items-center justify-between">
+    <div class="bg-white dark:bg-gray-900 rounded-lg w-full max-w-5xl h-[95vh] shadow-xl mx-4 overflow-hidden flex flex-col">
+      <div class="bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-800 px-6 py-4 flex items-center justify-between flex-shrink-0">
         <h2 class="text-lg font-semibold text-gray-900 dark:text-white">
           {t('event.guests')}
         </h2>
@@ -702,7 +702,7 @@ Astro.csp?.insertScriptHash(sha256ScriptHash(eventScript));
           </svg>
         </button>
       </div>
-      <div class="p-6">
+      <div class="p-6 overflow-y-auto flex-1">
         <GuestManager client:load eventId={eventId} isAdmin={isAdmin(currentUser?.role ?? null)} isResponsible={isCurrentUserResponsible} isVerified={!!currentUser?.verified} isAuthenticated={isAuth} maxGuestsPerUser={event.maxGuestsPerUser ?? 3} t={translations} />
       </div>
     </div>
