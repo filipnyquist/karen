@@ -51,6 +51,8 @@ uploads/.e2e-secrets
 # SQL dumps
 karen_dump.sql
 *.sql
+# But allow Drizzle migration files to be tracked
+!src/db/migrations/*.sql
 
 # Agent debug artifacts
 .playwright-mcp/
