@@ -54,6 +54,15 @@ export const users = pgTable("users", {
     name: text("name"),
     profilePic: text("profile_pic"),
     description: text("description"),
+    // The member's own personnummer, shown to event responsibles alongside
+    // the guests this member signed in. Same at-rest scheme as
+    // guest_registrations.guest_ssn: AES-encrypted value plus an HMAC blind
+    // index over the normalized form (see src/lib/ssn.ts) so we can check
+    // "is this personnummer already claimed" without decrypting the column.
+    // Nullable: existing accounts predate the field and fill it in on first
+    // guest signup.
+    ssn: text("ssn"),
+    ssnHash: text("ssn_hash"),
     emailVerified: boolean("email_verified").default(false),
     verified: boolean("verified").default(false),
     role: userRoleEnum("role").default("user").notNull(),
@@ -67,7 +76,13 @@ export const users = pgTable("users", {
     updatedAt: timestamp("updated_at", { withTimezone: true })
         .defaultNow()
         .notNull(),
-});
+}, (t) => [
+    // Partial: two accounts must not claim the same personnummer, but the
+    // many rows that have not set one yet all stay NULL and unconstrained.
+    uniqueIndex("users_ssn_hash_unique")
+        .on(t.ssnHash)
+        .where(sql`${t.ssnHash} IS NOT NULL`),
+]);
 
 export const sessions = pgTable("sessions", {
     id: uuid("id").defaultRandom().primaryKey(),

@@ -21,6 +21,7 @@ import {
 } from '../../db/schema';
 import { eq, and, or, sql, desc, inArray } from 'drizzle-orm';
 import { isAdmin } from '../../api/middleware/auth';
+import { decrypt } from '../../lib/encryption';
 
 const t = Astro.locals.t;
 const lang = Astro.locals.lang ?? 'sv';
@@ -202,6 +203,19 @@ const isCurrentUserResponsible = currentUser
 const isCurrentUserAdminOrResponsible = currentUser
   ? (isAdmin(currentUser.role) || isCurrentUserResponsible)
   : false;
+
+// The guest form needs the viewer's own SSN so it can skip the one-time
+// prompt for members who already registered one. Decrypted here rather than
+// fetched client-side so the modal renders in its final state immediately.
+let currentUserSsn: string | null = null;
+if (currentUser) {
+  const [row] = await db
+    .select({ ssn: users.ssn })
+    .from(users)
+    .where(eq(users.id, currentUser.id))
+    .limit(1);
+  currentUserSsn = row?.ssn ? await decrypt(row.ssn) : null;
+}
 
 // Check if current user can scan tickets for this event
 const scanEventStart = new Date(event.startDate);
@@ -691,7 +705,7 @@ Astro.csp?.insertScriptHash(sha256ScriptHash(eventScript));
 
   <!-- Guest Modal -->
   <div id="guest-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-    <div class="bg-white dark:bg-gray-900 rounded-lg w-full max-w-5xl h-[95vh] shadow-xl mx-4 overflow-hidden flex flex-col">
+    <div class="bg-white dark:bg-gray-900 rounded-lg w-full max-w-7xl h-[95vh] shadow-xl mx-4 overflow-hidden flex flex-col">
       <div class="bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-800 px-6 py-4 flex items-center justify-between flex-shrink-0">
         <h2 class="text-lg font-semibold text-gray-900 dark:text-white">
           {t('event.guests')}
@@ -703,7 +717,7 @@ Astro.csp?.insertScriptHash(sha256ScriptHash(eventScript));
         </button>
       </div>
       <div class="p-6 overflow-y-auto flex-1">
-        <GuestManager client:load eventId={eventId} isAdmin={isAdmin(currentUser?.role ?? null)} isResponsible={isCurrentUserResponsible} isVerified={!!currentUser?.verified} isAuthenticated={isAuth} maxGuestsPerUser={event.maxGuestsPerUser ?? 3} t={translations} />
+        <GuestManager client:load eventId={eventId} isAdmin={isAdmin(currentUser?.role ?? null)} isResponsible={isCurrentUserResponsible} isVerified={!!currentUser?.verified} isAuthenticated={isAuth} maxGuestsPerUser={event.maxGuestsPerUser ?? 3} reporterSsn={currentUserSsn} reporterDisplayName={currentUser?.name ?? currentUser?.nickname ?? currentUser?.email ?? ''} t={translations} />
       </div>
     </div>
   </div>

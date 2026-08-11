@@ -10,6 +10,7 @@ import {
     workerRegistrations,
 } from "../../db/schema";
 import { decrypt, encrypt, hashSsn } from "../../lib/encryption";
+import { parseSsn } from "../../lib/ssn";
 import {
     getEventById,
     getGuestCountForEvent,
@@ -79,34 +80,47 @@ export const guestRoutes = new Elysia()
                     }
                 }
 
-                if (body.guestSsn) {
-                    const ssnHash = await hashSsn(body.guestSsn);
-                    const existingSsn = await db
-                        .select()
-                        .from(guestRegistrations)
-                        .where(
-                            and(
-                                eq(guestRegistrations.guestSsnHash, ssnHash),
-                                eq(guestRegistrations.eventId, body.eventId),
-                            ),
-                        )
-                        .limit(1);
-
-                    if (existingSsn.length > 0) {
-                        throw new AppError(
-                            "A guest with this SSN is already registered for this event",
-                            409,
-                            "GUEST_SSN_EXISTS",
-                        );
-                    }
+                // The submitter vouches for the guest with their own
+                // personnummer, so it must be on file before they can add
+                // anyone. The island disables the button for this case; this
+                // is the server-side twin of that guard.
+                const [reporter] = await db
+                    .select({ ssn: users.ssn })
+                    .from(users)
+                    .where(eq(users.id, user.id))
+                    .limit(1);
+                if (!reporter?.ssn) {
+                    throw new AppError(
+                        "You must register your own SSN before adding guests",
+                        409,
+                        "REPORTER_SSN_REQUIRED",
+                    );
                 }
 
-                const encryptedSsn = body.guestSsn
-                    ? await encrypt(body.guestSsn)
-                    : null;
-                const ssnHash = body.guestSsn
-                    ? await hashSsn(body.guestSsn)
-                    : null;
+                // Normalize before hashing so the same person entered as
+                // "900101-1239" and "19900101-1239" collides on the
+                // guest_ssn_event_unique index instead of slipping through.
+                const parsedSsn = parseSsn(body.guestSsn);
+                const ssnHash = await hashSsn(parsedSsn.normalized);
+
+                const existingSsn = await db
+                    .select()
+                    .from(guestRegistrations)
+                    .where(
+                        and(
+                            eq(guestRegistrations.guestSsnHash, ssnHash),
+                            eq(guestRegistrations.eventId, body.eventId),
+                        ),
+                    )
+                    .limit(1);
+
+                if (existingSsn.length > 0) {
+                    throw new AppError(
+                        "A guest with this SSN is already registered for this event",
+                        409,
+                        "GUEST_SSN_EXISTS",
+                    );
+                }
 
                 const [registration] = await db
                     .insert(guestRegistrations)
@@ -115,7 +129,7 @@ export const guestRoutes = new Elysia()
                         reporterId: user.id,
                         guestName: body.guestName,
                         guestEmail: body.guestEmail ?? null,
-                        guestSsn: encryptedSsn,
+                        guestSsn: await encrypt(parsedSsn.display),
                         guestSsnHash: ssnHash,
                     })
                     .returning();
@@ -125,9 +139,9 @@ export const guestRoutes = new Elysia()
             {
                 body: t.Object({
                     eventId: t.String(),
-                    guestName: t.String(),
+                    guestName: t.String({ minLength: 1 }),
                     guestEmail: t.Optional(t.String()),
-                    guestSsn: t.Optional(t.String()),
+                    guestSsn: t.String({ minLength: 1 }),
                     adminOverride: t.Optional(t.Boolean()),
                 }),
             },
@@ -179,6 +193,7 @@ export const guestRoutes = new Elysia()
                         createdAt: guestRegistrations.createdAt,
                         reporterName: users.name,
                         reporterNickname: users.nickname,
+                        reporterSsn: users.ssn,
                     })
                     .from(guestRegistrations)
                     .innerJoin(
@@ -190,6 +205,9 @@ export const guestRoutes = new Elysia()
                     rows.map(async (g) => ({
                         ...g,
                         guestSsn: g.guestSsn ? await decrypt(g.guestSsn) : null,
+                        reporterSsn: g.reporterSsn
+                            ? await decrypt(g.reporterSsn)
+                            : null,
                     })),
                 );
             })
