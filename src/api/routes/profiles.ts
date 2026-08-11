@@ -82,11 +82,7 @@ export const profileRoutes = new Elysia({ prefix: "/profiles" })
         async ({ body, user }) => {
             const parsed = parseSsn(body.ssn);
             if (parsed.normalized === "") {
-                throw new AppError(
-                    "SSN cannot be empty",
-                    400,
-                    "SSN_REQUIRED",
-                );
+                throw new AppError("SSN cannot be empty", 400, "SSN_REQUIRED");
             }
 
             const ssnHash = await hashSsn(parsed.normalized);
