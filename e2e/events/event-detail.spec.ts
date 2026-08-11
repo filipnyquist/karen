@@ -27,9 +27,16 @@ test.describe("Event Detail", () => {
         const eventId = await findEventId(page, "Midsommarpub");
         await page.goto(`/event/${eventId}`);
 
-        // If already registered, unregister first
+        // If already registered, unregister first. Check visible before
+        // enabled: isVisible() returns false immediately for a missing
+        // element, while isEnabled() would auto-wait out the test timeout.
+        // The enabled check matters because a plain worker now sees this
+        // button in a disabled state, and clicking it would hang.
         const unregisterBtn = page.getByRole("button", { name: "Avanmäl" });
-        if (await unregisterBtn.isVisible()) {
+        if (
+            (await unregisterBtn.isVisible()) &&
+            (await unregisterBtn.isEnabled())
+        ) {
             await unregisterBtn.click();
             await page.waitForTimeout(1000);
             await page.reload();
@@ -45,28 +52,73 @@ test.describe("Event Detail", () => {
         ).toBeVisible();
     });
 
-    test("unregister as worker", async ({ page }) => {
+    test("plain worker cannot unregister themselves", async ({ page }) => {
         await login(page, "alice");
         const eventId = await findEventId(page, "Midsommarpub");
         await page.goto(`/event/${eventId}`);
 
-        // Alice is registered for Midsommarpub per seed data
+        // Alice is a non-responsible worker on Midsommarpub per seed data.
+        // Dropping a shift needs a replacement, so the button is shown but
+        // inert and the page explains who to talk to.
         const unregisterBtn = page.getByRole("button", { name: "Avanmäl" });
-        if (await unregisterBtn.isVisible()) {
-            await unregisterBtn.click();
-            await page.waitForTimeout(1000);
-            await page.reload();
-            await page.waitForLoadState("networkidle");
+        await expect(unregisterBtn).toBeVisible();
+        await expect(unregisterBtn).toBeDisabled();
+        // Target the element, not the text: the same string also appears in
+        // the serialized island props further down the page.
+        await expect(page.locator("#unregister-blocked-reason")).toContainText(
+            "KPS",
+        );
+    });
 
-            // Now should see register button instead
-            await expect(
-                page.getByRole("button", { name: "Anmäl dig" }),
-            ).toBeVisible();
+    test("plain worker is refused by the unregister API", async ({ page }) => {
+        await login(page, "alice");
+        const eventId = await findEventId(page, "Midsommarpub");
+        await page.goto(`/event/${eventId}`);
 
-            // Re-register to restore state
-            await page.getByRole("button", { name: "Anmäl dig" }).click();
-            await page.waitForTimeout(1000);
-        }
+        // The disabled button is only half the guard — going straight at the
+        // endpoint must fail too, or the rule is cosmetic. Issued from inside
+        // the page so it carries the session and CSRF token exactly as the
+        // app's own fetch does; only the button is bypassed.
+        const result = await page.evaluate(async (id) => {
+            const res = await fetch(`/api/workers/register/${id}`, {
+                method: "DELETE",
+                credentials: "same-origin",
+            });
+            return { status: res.status, body: await res.text() };
+        }, eventId);
+        expect(result.status).toBe(403);
+        expect(JSON.parse(result.body).code).toBe("SELF_REMOVAL_FORBIDDEN");
+
+        // And the registration survived.
+        await page.goto(`/event/${eventId}`);
+        await page.waitForLoadState("networkidle");
+        await expect(
+            page.getByRole("table").getByRole("link", { name: "Alicia" }),
+        ).toBeVisible();
+    });
+
+    test("responsible can unregister themselves", async ({ page }) => {
+        await login(page, "erik");
+        const eventId = await findEventId(page, "Midsommarpub");
+        await page.goto(`/event/${eventId}`);
+
+        // Erik is the responsible for Midsommarpub, so he can arrange his own
+        // replacement and is allowed to leave.
+        const unregisterBtn = page.getByRole("button", { name: "Avanmäl" });
+        await expect(unregisterBtn).toBeEnabled();
+        await unregisterBtn.click();
+        await page.waitForTimeout(1000);
+        await page.reload();
+        await page.waitForLoadState("networkidle");
+
+        await expect(
+            page.getByRole("button", { name: "Anmäl dig" }),
+        ).toBeVisible();
+
+        // Restore seed state as responsible, not as a plain worker — coming
+        // back without the flag would leave him unable to leave again.
+        await page.getByRole("button", { name: "Anmäl som ansvarig" }).click();
+        await page.waitForTimeout(1000);
     });
 
     test("past event shows no registration button", async ({ page }) => {
