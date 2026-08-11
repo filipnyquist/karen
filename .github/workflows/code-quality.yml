@@ -36,6 +36,20 @@ jobs:
       - run: bun run build
       - run: bunx astro check
 
+  unit:
+    name: Unit Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - run: bun install --frozen-lockfile
+      # Scoped to src/ on purpose: a bare `bun test` also collects the
+      # Playwright specs under e2e/, which cannot run under the bun test
+      # runner. Those are covered by the separate E2E workflow.
+      - run: bun test src/
+
   audit:
     name: Dependency Audit
     runs-on: ubuntu-latest
