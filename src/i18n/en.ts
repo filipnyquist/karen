@@ -76,6 +76,8 @@ export default {
         givesPointsToWorkers: "Gives points to workers",
         register: "Sign up",
         unregister: "Unregister",
+        cannotUnregister:
+            "You'll need to contact KPS/responsible to remove yourself, as you'll need to find a replacement worker.",
         registerAsResponsible: "Sign up as responsible",
         responsible: "Responsible",
         roles: "Roles",

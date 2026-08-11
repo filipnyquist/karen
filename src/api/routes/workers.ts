@@ -11,6 +11,7 @@ import {
 } from "../../services/events";
 import {
     authDerive,
+    isAdmin,
     responsibleOrAdminDerive,
     verifiedDerive,
 } from "../middleware/auth";
@@ -118,23 +119,44 @@ export const workerRoutes = new Elysia()
         new Elysia({ prefix: "/workers" })
             .derive(authDerive)
             .delete("/register/:eventId", async ({ params, user }) => {
-                const result = await db
-                    .delete(workerRegistrations)
+                const [registration] = await db
+                    .select()
+                    .from(workerRegistrations)
                     .where(
                         and(
                             eq(workerRegistrations.eventId, params.eventId),
                             eq(workerRegistrations.userId, user.id),
                         ),
                     )
-                    .returning();
+                    .limit(1);
 
-                if (result.length === 0) {
+                if (!registration) {
                     throw new AppError(
                         "Not registered for this event",
                         404,
                         "NOT_REGISTERED",
                     );
                 }
+
+                // Dropping a shift leaves the event short-staffed, so an
+                // ordinary worker cannot walk away unilaterally — someone who
+                // can arrange a replacement has to do it. Admins and the
+                // event's own responsibles are exactly that group.
+                //
+                // This mirrors the gating on the Unregister button in
+                // src/pages/event/[id].astro; the two must agree or the UI
+                // will offer an action the API refuses (or hide a valid one).
+                if (!isAdmin(user.role) && !registration.responsible) {
+                    throw new AppError(
+                        "You need to contact KPS or a responsible to be removed from this event, as a replacement worker has to be found",
+                        403,
+                        "SELF_REMOVAL_FORBIDDEN",
+                    );
+                }
+
+                await db
+                    .delete(workerRegistrations)
+                    .where(eq(workerRegistrations.id, registration.id));
 
                 return { success: true };
             })

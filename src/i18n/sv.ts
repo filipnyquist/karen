@@ -77,6 +77,8 @@ export default {
         givesPointsToWorkers: "Ger poäng till jobbare",
         register: "Anmäl dig",
         unregister: "Avanmäl",
+        cannotUnregister:
+            "Du behöver kontakta KPS/ansvarig för att avanmäla dig, eftersom en ersättare måste hittas.",
         registerAsResponsible: "Anmäl som ansvarig",
         responsible: "Ansvarig",
         roles: "Roller",

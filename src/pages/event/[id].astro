@@ -538,9 +538,29 @@ Astro.csp?.insertScriptHash(sha256ScriptHash(eventScript));
       {currentUser && !isPast && !event.locked && (
         <div class="mt-6 flex flex-wrap items-center gap-3">
           {isRegistered ? (
-            <button data-action="unregister-from-event" data-event-id={eventId} class="px-4 py-2 rounded-md bg-red-600 text-white font-medium hover:bg-red-700 transition-colors">
-              {t('event.unregister')}
-            </button>
+            /* Leaving a shift short-staffed is not a solo decision — only
+               admins and this event's responsibles can unregister themselves.
+               Everyone else gets a disabled button plus the reason. Mirrors
+               the SELF_REMOVAL_FORBIDDEN check in src/api/routes/workers.ts. */
+            isCurrentUserAdminOrResponsible ? (
+              <button data-action="unregister-from-event" data-event-id={eventId} class="px-4 py-2 rounded-md bg-red-600 text-white font-medium hover:bg-red-700 transition-colors">
+                {t('event.unregister')}
+              </button>
+            ) : (
+              <div class="flex flex-wrap items-center gap-3">
+                <button
+                  type="button"
+                  disabled
+                  aria-describedby="unregister-blocked-reason"
+                  class="px-4 py-2 rounded-md bg-red-600 text-white font-medium opacity-50 cursor-not-allowed"
+                >
+                  {t('event.unregister')}
+                </button>
+                <p id="unregister-blocked-reason" class="text-sm text-gray-600 dark:text-gray-400 max-w-md">
+                  {t('event.cannotUnregister')}
+                </p>
+              </div>
+            )
           ) : (
             <Fragment>
               <button data-action="register-for-event" data-event-id={eventId} data-responsible="false" class="px-4 py-2 rounded-md bg-blue-600 text-white font-medium hover:bg-blue-700 transition-colors">
