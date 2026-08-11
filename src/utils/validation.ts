@@ -11,10 +11,11 @@ export function isValidEmail(email: string): boolean {
     return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 }
 
-/** Validates BTH student email */
+/** Validates BTH student email (case-insensitive). */
 export function isBthEmail(email: string): boolean {
+    const lower = email.toLowerCase();
     return (
-        email.endsWith("@student.bth.se") || email.endsWith("@bthstudent.se")
+        lower.endsWith("@student.bth.se") || lower.endsWith("@bthstudent.se")
     );
 }
 

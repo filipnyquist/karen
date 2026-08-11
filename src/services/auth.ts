@@ -27,6 +27,11 @@ export async function createUser(
     name: string,
     nickname: string,
 ): Promise<typeof users.$inferSelect> {
+    // Normalise once at the top — `users.email` is case-sensitive at the
+    // DB layer, so Test@x.com and test@x.com would otherwise land as
+    // two distinct accounts. Every downstream use (lookup, insert,
+    // send, verification row) takes the lowercased value.
+    email = email.trim().toLowerCase();
     if (!isValidEmail(email))
         throw new AppError("Invalid email", 400, "INVALID_EMAIL");
     if (isBthEmail(email))
@@ -114,6 +119,9 @@ export async function login(
     expiresAt: Date;
     user: typeof users.$inferSelect;
 }> {
+    // Match the case-fold done at registration so a user can log in
+    // regardless of how they typed their address at signup.
+    email = email.trim().toLowerCase();
     const result = await db
         .select()
         .from(users)
@@ -188,6 +196,10 @@ export async function requestVerification(
     userId: string,
     email: string,
 ): Promise<true> {
+    // Lowercase before the BTH-domain check so Foo@STUDENT.BTH.SE is
+    // recognised as a BTH address. `users.email` is stored lowercase at
+    // signup, so the equality compare below matches it exactly.
+    email = email.trim().toLowerCase();
     if (!isBthEmail(email))
         throw new AppError(
             "Must be a @student.bth.se or @bthstudent.se email",
