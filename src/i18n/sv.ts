@@ -77,6 +77,8 @@ export default {
         givesPointsToWorkers: "Ger poäng till jobbare",
         register: "Anmäl dig",
         unregister: "Avanmäl",
+        cannotUnregister:
+            "Du behöver kontakta KPS/ansvarig för att avanmäla dig, eftersom en ersättare måste hittas.",
         registerAsResponsible: "Anmäl som ansvarig",
         responsible: "Ansvarig",
         roles: "Roller",
@@ -254,6 +256,19 @@ export default {
         addedAt: "Tillagd",
         needVerification:
             "Du behöver verifiera ditt konto för att lägga till gäster.",
+        guest: "Gäst",
+        fullName: "Fullständigt namn",
+        noSwedishSsn: "Inget personnr registrerat",
+        ssnValidPersonnummer: "Giltigt personnummer",
+        ssnFreeText: "Inte ett svenskt personnummer — sparas som fritext.",
+        ownSsnTitle: "Vi behöver ditt personnummer en gång",
+        ownSsnExplain:
+            "Det lagras krypterat på ditt konto och visas för eventansvariga bredvid de gäster du lägger till.",
+        ownSsnSave: "Spara",
+        ownSsnSaved: "Lägger till som",
+        ownSsnChange: "ändra",
+        ownSsnRequired: "Registrera ditt eget personnummer ovan först.",
+        ownSsnFailed: "Kunde inte spara ditt personnummer",
     },
     team: {
         title: "Publag",

@@ -15,14 +15,18 @@
 
 import { createHash } from "node:crypto";
 
+// Astro types the hash parameters as a template literal (`sha256-${string}`
+// and friends) rather than plain `string`, so these helpers have to return
+// that narrower type or every call site fails to typecheck.
+
 /** SHA-256 base64 of the script content, formatted as the CSP hash source. */
-export function sha256ScriptHash(content: string): string {
+export function sha256ScriptHash(content: string): `sha256-${string}` {
     const digest = createHash("sha256").update(content).digest("base64");
     return `sha256-${digest}`;
 }
 
 /** SHA-256 base64 of the style content, formatted as the CSP hash source. */
-export function sha256StyleHash(content: string): string {
+export function sha256StyleHash(content: string): `sha256-${string}` {
     const digest = createHash("sha256").update(content).digest("base64");
     return `sha256-${digest}`;
 }

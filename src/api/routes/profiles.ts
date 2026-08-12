@@ -4,6 +4,8 @@ import { and, eq, ilike, ne, or } from "drizzle-orm";
 import { Elysia, t } from "elysia";
 import { db } from "../../db";
 import { sessions, users } from "../../db/schema";
+import { decrypt, encrypt, hashSsn } from "../../lib/encryption";
+import { parseSsn } from "../../lib/ssn";
 import { extractSessionToken } from "../../utils/cookies";
 import { isStrongPassword } from "../../utils/validation";
 import { authDerive } from "../middleware/auth";
@@ -20,6 +22,7 @@ export const profileRoutes = new Elysia({ prefix: "/profiles" })
                 name: users.name,
                 profilePic: users.profilePic,
                 description: users.description,
+                ssn: users.ssn,
                 emailVerified: users.emailVerified,
                 verified: users.verified,
                 role: users.role,
@@ -33,7 +36,10 @@ export const profileRoutes = new Elysia({ prefix: "/profiles" })
             throw new AppError("User not found", 404, "USER_NOT_FOUND");
         }
 
-        return result[0];
+        // Decrypt in place — callers get the readable personnummer, never
+        // the stored ciphertext.
+        const { ssn, ...rest } = result[0];
+        return { ...rest, ssn: ssn ? await decrypt(ssn) : null };
     })
     .put(
         "/me",
@@ -68,6 +74,49 @@ export const profileRoutes = new Elysia({ prefix: "/profiles" })
                 nickname: t.Optional(t.Nullable(t.String())),
                 name: t.Optional(t.Nullable(t.String())),
                 description: t.Optional(t.Nullable(t.String())),
+            }),
+        },
+    )
+    .put(
+        "/me/ssn",
+        async ({ body, user }) => {
+            const parsed = parseSsn(body.ssn);
+            if (parsed.normalized === "") {
+                throw new AppError("SSN cannot be empty", 400, "SSN_REQUIRED");
+            }
+
+            const ssnHash = await hashSsn(parsed.normalized);
+
+            // Guard the partial unique index with a friendly error rather
+            // than letting the constraint surface as a 500.
+            const existing = await db
+                .select({ id: users.id })
+                .from(users)
+                .where(and(eq(users.ssnHash, ssnHash), ne(users.id, user.id)))
+                .limit(1);
+            if (existing.length > 0) {
+                throw new AppError(
+                    "That personnummer is already registered to another account",
+                    409,
+                    "SSN_ALREADY_REGISTERED",
+                );
+            }
+
+            await db
+                .update(users)
+                .set({
+                    ssn: await encrypt(parsed.display),
+                    ssnHash,
+                    updatedAt: new Date(),
+                })
+                .where(eq(users.id, user.id));
+
+            // Echo back the readable value only — never the ciphertext.
+            return { ssn: parsed.display, kind: parsed.kind };
+        },
+        {
+            body: t.Object({
+                ssn: t.String({ minLength: 1 }),
             }),
         },
     )

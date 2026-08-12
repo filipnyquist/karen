@@ -76,6 +76,8 @@ export default {
         givesPointsToWorkers: "Gives points to workers",
         register: "Sign up",
         unregister: "Unregister",
+        cannotUnregister:
+            "You'll need to contact KPS/responsible to remove yourself, as you'll need to find a replacement worker.",
         registerAsResponsible: "Sign up as responsible",
         responsible: "Responsible",
         roles: "Roles",
@@ -251,6 +253,19 @@ export default {
         addedBy: "Added by",
         addedAt: "Added",
         needVerification: "You need to verify your account to add guests.",
+        guest: "Guest",
+        fullName: "Full name",
+        noSwedishSsn: "No SSN on file",
+        ssnValidPersonnummer: "Valid personnummer",
+        ssnFreeText: "Not a Swedish personnummer — saved as free text.",
+        ownSsnTitle: "We need your personnummer once",
+        ownSsnExplain:
+            "It is stored encrypted on your account and shown to event responsibles next to the guests you add.",
+        ownSsnSave: "Save",
+        ownSsnSaved: "Adding as",
+        ownSsnChange: "change",
+        ownSsnRequired: "Register your own SSN above first.",
+        ownSsnFailed: "Failed to save your SSN",
     },
     team: {
         title: "Pub Teams",
