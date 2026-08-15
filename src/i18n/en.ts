@@ -4,6 +4,36 @@ export default {
         title: "Karen",
         subtitle: "Student Pub Management",
         credit: 'Created by Filip "Mr.Mime" Nyquist',
+        privacy: "Privacy",
+    },
+    privacy: {
+        title: "Privacy Notice",
+        lastUpdated: "Last updated: 2026-08-15",
+        intro: "Karen is run by a student pub to manage events. This page explains what data we collect, why, and what choices you have.",
+        collect: {
+            heading: "What we collect",
+            body: "To create an account and run events for you, we store: your email and a bcrypt-hashed password; your name, nickname, optional profile picture, and role; your Swedish personnummer (personnummer) — encrypted at rest with AES-256-GCM and only readable by event responsibles and you; activity you produce (comments, guest registrations, worker shifts, ticket scans, free-text reports); and a session cookie that expires after 30 days of inactivity.",
+        },
+        legalBasis: {
+            heading: "Why we keep it (legal basis)",
+            body: "Account creation is by your consent (you registered). Running the pub is our legitimate interest. Storing your encrypted personnummer is by your consent, given when you verified your student status.",
+        },
+        rights: {
+            heading: "Your rights",
+            body: "You can access your data at any time via /profile/me and /api/profiles/me. You can correct your name, nickname, description, and profile picture at /profile/edit. To have your account and PII deleted, or to receive a JSON export of your data, email admin@karen.se. Deletion removes your PII while keeping anonymized audit entries for operational accountability.",
+        },
+        retention: {
+            heading: "Retention",
+            body: "Active accounts are kept while the account exists. The audit log is retained for operational accountability. Deleted accounts have their PII removed; anonymized audit entries may persist longer to preserve an honest history.",
+        },
+        contact: {
+            heading: "Contact",
+            body: "For privacy questions, account deletion, or data export requests, email admin@karen.se.",
+        },
+        cookies: {
+            heading: "Cookies",
+            body: "We only use strictly necessary cookies: a session cookie to keep you logged in, and a CSRF cookie to protect against cross-site form submissions. No tracking, analytics, or advertising cookies are set.",
+        },
     },
     nav: {
         home: "Home",
