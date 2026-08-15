@@ -11,6 +11,7 @@
 import { eq } from "drizzle-orm";
 import mysql, { type RowDataPacket } from "mysql2/promise";
 import { encrypt, hashSsn } from "../lib/encryption";
+import { generateJoinCode } from "../utils/joinCode";
 import { db } from "./index";
 import {
     comments,
@@ -576,6 +577,7 @@ async function main() {
                 name: t.name,
                 description: t.description || null,
                 teamColor: t.team_color || "#000000",
+                joinCode: generateJoinCode(),
                 createdBy: systemUserId,
             })
             .returning({ id: pubTeams.id });

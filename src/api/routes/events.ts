@@ -96,10 +96,7 @@ export const eventRoutes = new Elysia()
                     //
                     // Elysia 1.4 strips unknown body fields silently, but
                     // `locked` is still in the schema so it survives here.
-                    if (
-                        body.locked === false &&
-                        !isAdmin(user.role)
-                    ) {
+                    if (body.locked === false && !isAdmin(user.role)) {
                         throw new AppError(
                             "Only admins can unlock events — use POST /api/events/:id/lock",
                             403,

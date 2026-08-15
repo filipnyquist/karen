@@ -72,7 +72,9 @@ test.describe("Ticket scan PII surface", () => {
         expect(user && "ssnHash" in user, "scan must NOT include ssnHash").toBe(
             false,
         );
-        expect(user && "role" in user, "scan must NOT include role").toBe(false);
+        expect(user && "role" in user, "scan must NOT include role").toBe(
+            false,
+        );
 
         await adminCtx.close();
     });
