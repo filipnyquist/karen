@@ -23,11 +23,7 @@ const GUEST_FULL_NAMES = [
     "Per Persson",
     "Sara Svensson",
 ];
-const GUEST_EMAILS = [
-    "mats@email.se",
-    "lena@email.se",
-    "sara@email.se",
-];
+const GUEST_EMAILS = ["mats@email.se", "lena@email.se", "sara@email.se"];
 const ALICE_FULL_NAME = "Alice Andersson";
 
 test.describe("Event page PII leaks", () => {

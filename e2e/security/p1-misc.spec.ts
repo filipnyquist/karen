@@ -152,9 +152,14 @@ test.describe("P1 auth / PII surface findings", () => {
         ).toContain(noCode.status);
 
         // 2) Wrong code → 403 INVALID_CODE.
-        const wrongCode = await csrfFetch(page, "POST", `/api/teams/${target.id}/join`, {
-            code: "ZZZZZZZZ",
-        });
+        const wrongCode = await csrfFetch(
+            page,
+            "POST",
+            `/api/teams/${target.id}/join`,
+            {
+                code: "ZZZZZZZZ",
+            },
+        );
         expect(wrongCode.status, "wrong-code join must be 403").toBe(403);
 
         // 3) Right code → 200 (joined) or 409 (already a member). Read
@@ -190,9 +195,14 @@ test.describe("P1 auth / PII surface findings", () => {
         // Send to a different BTH address — should be refused because the
         // service enforces `user.email === body.email`
         // (src/services/auth.ts:217 EMAIL_MISMATCH).
-        const result = await csrfFetch(page, "POST", "/api/auth/request-verify", {
-            email: "victim@student.bth.se",
-        });
+        const result = await csrfFetch(
+            page,
+            "POST",
+            "/api/auth/request-verify",
+            {
+                email: "victim@student.bth.se",
+            },
+        );
         expect(
             result.ok,
             `request-verify should refuse mismatched email (status=${result.status}, body=${JSON.stringify(result.body)})`,

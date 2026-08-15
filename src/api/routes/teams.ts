@@ -5,8 +5,8 @@ import { Elysia, t } from "elysia";
 import { db } from "../../db";
 import { pubTeamMembers, pubTeams, users } from "../../db/schema";
 import { MAX_FILE_SIZE, processAndStoreImage } from "../../lib/uploads";
-import { generateJoinCode } from "../../utils/joinCode";
 import { recordAdminAction } from "../../services/auditLog";
+import { generateJoinCode } from "../../utils/joinCode";
 import type { AuthUser } from "../middleware/auth";
 import {
     adminDerive,
@@ -107,66 +107,74 @@ export const teamRoutes = new Elysia()
                     })),
                 };
             })
-            .post("/:id/join", async ({ params, body, user }) => {
-                const teamResult = await db
-                    .select({
-                        id: pubTeams.id,
-                        joinCode: pubTeams.joinCode,
-                    })
-                    .from(pubTeams)
-                    .where(eq(pubTeams.id, params.id))
-                    .limit(1);
+            .post(
+                "/:id/join",
+                async ({ params, body, user }) => {
+                    const teamResult = await db
+                        .select({
+                            id: pubTeams.id,
+                            joinCode: pubTeams.joinCode,
+                        })
+                        .from(pubTeams)
+                        .where(eq(pubTeams.id, params.id))
+                        .limit(1);
 
-                if (teamResult.length === 0) {
-                    throw new AppError("Team not found", 404, "TEAM_NOT_FOUND");
-                }
+                    if (teamResult.length === 0) {
+                        throw new AppError(
+                            "Team not found",
+                            404,
+                            "TEAM_NOT_FOUND",
+                        );
+                    }
 
-                // Teams are invite-only — a valid 8-char join code is
-                // required. Prevents blind enumeration by any logged-in
-                // user (P1-3).
-                if (
-                    typeof body.code !== "string" ||
-                    body.code.length !== 8 ||
-                    body.code !== teamResult[0].joinCode
-                ) {
-                    throw new AppError(
-                        "Invalid join code",
-                        403,
-                        "INVALID_CODE",
-                    );
-                }
+                    // Teams are invite-only — a valid 8-char join code is
+                    // required. Prevents blind enumeration by any logged-in
+                    // user (P1-3).
+                    if (
+                        typeof body.code !== "string" ||
+                        body.code.length !== 8 ||
+                        body.code !== teamResult[0].joinCode
+                    ) {
+                        throw new AppError(
+                            "Invalid join code",
+                            403,
+                            "INVALID_CODE",
+                        );
+                    }
 
-                const existing = await db
-                    .select()
-                    .from(pubTeamMembers)
-                    .where(
-                        and(
-                            eq(pubTeamMembers.teamId, params.id),
-                            eq(pubTeamMembers.userId, user.id),
-                        ),
-                    )
-                    .limit(1);
+                    const existing = await db
+                        .select()
+                        .from(pubTeamMembers)
+                        .where(
+                            and(
+                                eq(pubTeamMembers.teamId, params.id),
+                                eq(pubTeamMembers.userId, user.id),
+                            ),
+                        )
+                        .limit(1);
 
-                if (existing.length > 0) {
-                    throw new AppError(
-                        "Already a member of this team",
-                        409,
-                        "ALREADY_MEMBER",
-                    );
-                }
+                    if (existing.length > 0) {
+                        throw new AppError(
+                            "Already a member of this team",
+                            409,
+                            "ALREADY_MEMBER",
+                        );
+                    }
 
-                await db.insert(pubTeamMembers).values({
-                    teamId: params.id,
-                    userId: user.id,
-                    isAdmin: false,
-                });
+                    await db.insert(pubTeamMembers).values({
+                        teamId: params.id,
+                        userId: user.id,
+                        isAdmin: false,
+                    });
 
-                return { success: true };
-            }, {
-                body: t.Object({
-                    code: t.String({ minLength: 8, maxLength: 8 }),
-                }),
-            })
+                    return { success: true };
+                },
+                {
+                    body: t.Object({
+                        code: t.String({ minLength: 8, maxLength: 8 }),
+                    }),
+                },
+            )
             .post("/:id/leave", async ({ params, user }) => {
                 const result = await db
                     .delete(pubTeamMembers)
@@ -399,13 +407,21 @@ export const teamRoutes = new Elysia()
                     .update(pubTeams)
                     .set({ joinCode: newCode })
                     .where(eq(pubTeams.id, params.id))
-                    .returning({ id: pubTeams.id, joinCode: pubTeams.joinCode });
+                    .returning({
+                        id: pubTeams.id,
+                        joinCode: pubTeams.joinCode,
+                    });
                 if (!updated) {
                     throw new AppError("Team not found", 404, "TEAM_NOT_FOUND");
                 }
-                await recordAdminAction(user.id, "team.regenerate_code", user.id, {
-                    newValue: { teamId: updated.id },
-                });
+                await recordAdminAction(
+                    user.id,
+                    "team.regenerate_code",
+                    user.id,
+                    {
+                        newValue: { teamId: updated.id },
+                    },
+                );
                 return { code: updated.joinCode };
             })
             .post(
