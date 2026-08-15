@@ -4,6 +4,7 @@ import { relations, sql } from "drizzle-orm";
 import {
     boolean,
     customType,
+    date,
     index,
     integer,
     pgEnum,
@@ -41,52 +42,38 @@ export const userRoleEnum = pgEnum("user_role", [
 
 // ─── Users & Auth ───
 
-export const users = pgTable(
-    "users",
-    {
-        id: uuid("id").defaultRandom().primaryKey(),
-        email: text("email").notNull().unique(),
-        // Nullable: legacy / placeholder accounts (created during data import)
-        // have no password — login() rejects null with INVALID_CREDENTIALS.
-        // Nullable: legacy-import.pykaren users have no password (they authenticate
-        // via the migration flow that re-points a legacy placeholder to a new
-        // account). Real signups always populate this.
-        passwordHash: text("password_hash"),
-        nickname: text("nickname"),
-        name: text("name"),
-        profilePic: text("profile_pic"),
-        description: text("description"),
-        // The member's own personnummer, shown to event responsibles alongside
-        // the guests this member signed in. Same at-rest scheme as
-        // guest_registrations.guest_ssn: AES-encrypted value plus an HMAC blind
-        // index over the normalized form (see src/lib/ssn.ts) so we can check
-        // "is this personnummer already claimed" without decrypting the column.
-        // Nullable: existing accounts predate the field and fill it in on first
-        // guest signup.
-        ssn: text("ssn"),
-        ssnHash: text("ssn_hash"),
-        emailVerified: boolean("email_verified").default(false),
-        verified: boolean("verified").default(false),
-        role: userRoleEnum("role").default("user").notNull(),
-        isLegacy: boolean("is_legacy").default(false),
-        seenMigrationPrompt: boolean("seen_migration_prompt")
-            .default(false)
-            .notNull(),
-        createdAt: timestamp("created_at", { withTimezone: true })
-            .defaultNow()
-            .notNull(),
-        updatedAt: timestamp("updated_at", { withTimezone: true })
-            .defaultNow()
-            .notNull(),
-    },
-    (t) => [
-        // Partial: two accounts must not claim the same personnummer, but the
-        // many rows that have not set one yet all stay NULL and unconstrained.
-        uniqueIndex("users_ssn_hash_unique")
-            .on(t.ssnHash)
-            .where(sql`${t.ssnHash} IS NOT NULL`),
-    ],
-);
+export const users = pgTable("users", {
+    id: uuid("id").defaultRandom().primaryKey(),
+    email: text("email").notNull().unique(),
+    // Nullable: legacy / placeholder accounts (created during data import)
+    // have no password — login() rejects null with INVALID_CREDENTIALS.
+    // Nullable: legacy-import.pykaren users have no password (they authenticate
+    // via the migration flow that re-points a legacy placeholder to a new
+    // account). Real signups always populate this.
+    passwordHash: text("password_hash"),
+    nickname: text("nickname"),
+    name: text("name"),
+    profilePic: text("profile_pic"),
+    description: text("description"),
+    // The member's own date of birth (YYYY-MM-DD), used to verify the
+    // legal drinking age at the door. Plaintext — not identity — so
+    // no encryption, no blind index. Nullable: existing accounts
+    // predate the field and fill it in on first guest signup.
+    birthDate: date("birth_date"),
+    emailVerified: boolean("email_verified").default(false),
+    verified: boolean("verified").default(false),
+    role: userRoleEnum("role").default("user").notNull(),
+    isLegacy: boolean("is_legacy").default(false),
+    seenMigrationPrompt: boolean("seen_migration_prompt")
+        .default(false)
+        .notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+        .defaultNow()
+        .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+        .defaultNow()
+        .notNull(),
+});
 
 export const sessions = pgTable("sessions", {
     id: uuid("id").defaultRandom().primaryKey(),
@@ -213,31 +200,21 @@ export const workerRegistrations = pgTable(
     ],
 );
 
-export const guestRegistrations = pgTable(
-    "guest_registrations",
-    {
-        id: uuid("id").defaultRandom().primaryKey(),
-        eventId: uuid("event_id")
-            .notNull()
-            .references(() => events.id, { onDelete: "cascade" }),
-        reporterId: uuid("reporter_id")
-            .notNull()
-            .references(() => users.id, { onDelete: "cascade" }),
-        guestName: text("guest_name").notNull(),
-        guestEmail: text("guest_email"),
-        guestSsn: text("guest_ssn"),
-        guestSsnHash: text("guest_ssn_hash"),
-        createdAt: timestamp("created_at", { withTimezone: true })
-            .defaultNow()
-            .notNull(),
-    },
-    (table) => [
-        uniqueIndex("guest_ssn_event_unique").on(
-            table.guestSsnHash,
-            table.eventId,
-        ),
-    ],
-);
+export const guestRegistrations = pgTable("guest_registrations", {
+    id: uuid("id").defaultRandom().primaryKey(),
+    eventId: uuid("event_id")
+        .notNull()
+        .references(() => events.id, { onDelete: "cascade" }),
+    reporterId: uuid("reporter_id")
+        .notNull()
+        .references(() => users.id, { onDelete: "cascade" }),
+    guestName: text("guest_name").notNull(),
+    guestEmail: text("guest_email"),
+    guestBirthDate: date("guest_birth_date"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+        .defaultNow()
+        .notNull(),
+});
 
 // ─── Comments ───
 

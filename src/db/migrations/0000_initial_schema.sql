@@ -58,8 +58,7 @@ CREATE TABLE "guest_registrations" (
 	"reporter_id" uuid NOT NULL,
 	"guest_name" text NOT NULL,
 	"guest_email" text,
-	"guest_ssn" text,
-	"guest_ssn_hash" text,
+	"guest_birth_date" date,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
@@ -94,7 +93,8 @@ CREATE TABLE "legacy_mappings" (
 CREATE TABLE "locations" (
 	"id" serial PRIMARY KEY NOT NULL,
 	"name" text NOT NULL,
-	"description" text
+	"description" text,
+	CONSTRAINT "locations_name_unique" UNIQUE("name")
 );
 --> statement-breakpoint
 CREATE TABLE "pub_team_members" (
@@ -110,8 +110,10 @@ CREATE TABLE "pub_teams" (
 	"description" text,
 	"team_color" text,
 	"team_pic" text,
+	"join_code" varchar(8) NOT NULL,
 	"created_by" uuid,
-	"created_at" timestamp with time zone DEFAULT now() NOT NULL
+	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
+	CONSTRAINT "pub_teams_join_code_unique" UNIQUE("join_code")
 );
 --> statement-breakpoint
 CREATE TABLE "reports" (
@@ -165,6 +167,7 @@ CREATE TABLE "users" (
 	"name" text,
 	"profile_pic" text,
 	"description" text,
+	"birth_date" date,
 	"email_verified" boolean DEFAULT false,
 	"verified" boolean DEFAULT false,
 	"role" "user_role" DEFAULT 'user' NOT NULL,
@@ -225,7 +228,6 @@ ALTER TABLE "user_educations" ADD CONSTRAINT "user_educations_verified_by_users_
 ALTER TABLE "verification_pins" ADD CONSTRAINT "verification_pins_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "worker_registrations" ADD CONSTRAINT "worker_registrations_event_id_events_id_fk" FOREIGN KEY ("event_id") REFERENCES "public"."events"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "worker_registrations" ADD CONSTRAINT "worker_registrations_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
-CREATE UNIQUE INDEX "guest_ssn_event_unique" ON "guest_registrations" USING btree ("guest_ssn_hash","event_id");--> statement-breakpoint
 CREATE UNIQUE INDEX "tickets_one_active_per_user_event" ON "tickets" USING btree ("user_id","event_id") WHERE "tickets"."is_active" = true;--> statement-breakpoint
 CREATE INDEX "tickets_user_active_idx" ON "tickets" USING btree ("user_id","is_active");--> statement-breakpoint
 CREATE INDEX "tickets_event_active_idx" ON "tickets" USING btree ("event_id","is_active");--> statement-breakpoint

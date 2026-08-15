@@ -1,5 +1,5 @@
 {
-    "id": "531afe89-5e42-47e6-bbdf-7df48d482371",
+    "id": "3c068f6c-00da-4a3c-a505-72557e92cf2b",
     "prevId": "00000000-0000-0000-0000-000000000000",
     "version": "7",
     "dialect": "postgresql",
@@ -399,15 +399,9 @@
                     "primaryKey": false,
                     "notNull": false
                 },
-                "guest_ssn": {
-                    "name": "guest_ssn",
-                    "type": "text",
-                    "primaryKey": false,
-                    "notNull": false
-                },
-                "guest_ssn_hash": {
-                    "name": "guest_ssn_hash",
-                    "type": "text",
+                "guest_birth_date": {
+                    "name": "guest_birth_date",
+                    "type": "date",
                     "primaryKey": false,
                     "notNull": false
                 },
@@ -419,29 +413,7 @@
                     "default": "now()"
                 }
             },
-            "indexes": {
-                "guest_ssn_event_unique": {
-                    "name": "guest_ssn_event_unique",
-                    "columns": [
-                        {
-                            "expression": "guest_ssn_hash",
-                            "isExpression": false,
-                            "asc": true,
-                            "nulls": "last"
-                        },
-                        {
-                            "expression": "event_id",
-                            "isExpression": false,
-                            "asc": true,
-                            "nulls": "last"
-                        }
-                    ],
-                    "isUnique": true,
-                    "concurrently": false,
-                    "method": "btree",
-                    "with": {}
-                }
-            },
+            "indexes": {},
             "foreignKeys": {
                 "guest_registrations_event_id_events_id_fk": {
                     "name": "guest_registrations_event_id_events_id_fk",
@@ -695,7 +667,13 @@
             "indexes": {},
             "foreignKeys": {},
             "compositePrimaryKeys": {},
-            "uniqueConstraints": {},
+            "uniqueConstraints": {
+                "locations_name_unique": {
+                    "name": "locations_name_unique",
+                    "nullsNotDistinct": false,
+                    "columns": ["name"]
+                }
+            },
             "policies": {},
             "checkConstraints": {},
             "isRLSEnabled": false
@@ -791,6 +769,12 @@
                     "primaryKey": false,
                     "notNull": false
                 },
+                "join_code": {
+                    "name": "join_code",
+                    "type": "varchar(8)",
+                    "primaryKey": false,
+                    "notNull": true
+                },
                 "created_by": {
                     "name": "created_by",
                     "type": "uuid",
@@ -818,7 +802,13 @@
                 }
             },
             "compositePrimaryKeys": {},
-            "uniqueConstraints": {},
+            "uniqueConstraints": {
+                "pub_teams_join_code_unique": {
+                    "name": "pub_teams_join_code_unique",
+                    "nullsNotDistinct": false,
+                    "columns": ["join_code"]
+                }
+            },
             "policies": {},
             "checkConstraints": {},
             "isRLSEnabled": false
@@ -1253,6 +1243,12 @@
                 "description": {
                     "name": "description",
                     "type": "text",
+                    "primaryKey": false,
+                    "notNull": false
+                },
+                "birth_date": {
+                    "name": "birth_date",
+                    "type": "date",
                     "primaryKey": false,
                     "notNull": false
                 },

@@ -203,11 +203,11 @@ const isCurrentUserAdminOrResponsible = currentUser
   ? (isAdmin(currentUser.role) || isCurrentUserResponsible)
   : false;
 
-// The guest form needs the viewer's own SSN to skip the one-time prompt
-// for members who already registered one. We deliberately do NOT decrypt
-// it server-side here — the decrypted personnummer would ship in the
-// initial HTML payload. <GuestManager> fetches it from /api/profiles/me/ssn
-// when the modal becomes visible.
+// The guest form needs the viewer's own date of birth to skip the
+// one-time prompt for members who already registered one. We
+// deliberately do NOT ship it in the initial HTML payload —
+// <GuestManager> fetches it from /api/profiles/me/birth-date when
+// the modal becomes visible.
 
 // Check if current user can scan tickets for this event
 const scanEventStart = new Date(event.startDate);

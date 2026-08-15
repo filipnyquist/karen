@@ -4,26 +4,26 @@ import { and, eq, ilike, ne, or } from "drizzle-orm";
 import { Elysia, t } from "elysia";
 import { db } from "../../db";
 import { sessions, users } from "../../db/schema";
-import { decrypt, encrypt, hashSsn } from "../../lib/encryption";
-import { parseSsn } from "../../lib/ssn";
 import { extractSessionToken } from "../../utils/cookies";
+import { parseDob } from "../../utils/dob";
 import { isStrongPassword } from "../../utils/validation";
 import { authDerive } from "../middleware/auth";
 import { AppError } from "../middleware/error";
 
+const DOB_PATTERN = "^\\d{4}-\\d{2}-\\d{2}$";
+
 export const profileRoutes = new Elysia({ prefix: "/profiles" })
     .derive(authDerive)
-    .get("/me/ssn", async ({ user }) => {
-        // Returns the current user's own SSN, decrypted. Used by
-        // <GuestManager> to fetch the reporter's SSN on demand when the
-        // guest modal opens — kept out of the SSR payload so the
-        // decrypted personnummer never ships in HTML.
+    .get("/me/birth-date", async ({ user }) => {
+        // Used by <GuestManager> to fetch the reporter's date of birth
+        // on demand when the guest modal opens. Plaintext — kept out of
+        // the SSR payload so DOB never ships in HTML.
         const [row] = await db
-            .select({ ssn: users.ssn })
+            .select({ birthDate: users.birthDate })
             .from(users)
             .where(eq(users.id, user.id))
             .limit(1);
-        return { ssn: row?.ssn ? await decrypt(row.ssn) : null };
+        return { birthDate: row?.birthDate ?? null };
     })
     .get("/me", async ({ user }) => {
         const result = await db
@@ -34,7 +34,7 @@ export const profileRoutes = new Elysia({ prefix: "/profiles" })
                 name: users.name,
                 profilePic: users.profilePic,
                 description: users.description,
-                ssn: users.ssn,
+                birthDate: users.birthDate,
                 emailVerified: users.emailVerified,
                 verified: users.verified,
                 role: users.role,
@@ -48,10 +48,7 @@ export const profileRoutes = new Elysia({ prefix: "/profiles" })
             throw new AppError("User not found", 404, "USER_NOT_FOUND");
         }
 
-        // Decrypt in place — callers get the readable personnummer, never
-        // the stored ciphertext.
-        const { ssn, ...rest } = result[0];
-        return { ...rest, ssn: ssn ? await decrypt(ssn) : null };
+        return result[0];
     })
     .put(
         "/me",
@@ -90,45 +87,25 @@ export const profileRoutes = new Elysia({ prefix: "/profiles" })
         },
     )
     .put(
-        "/me/ssn",
+        "/me/birth-date",
         async ({ body, user }) => {
-            const parsed = parseSsn(body.ssn);
-            if (parsed.normalized === "") {
-                throw new AppError("SSN cannot be empty", 400, "SSN_REQUIRED");
+            const parsed = parseDob(body.birthDate);
+            if (parsed === null) {
+                throw new AppError("Invalid date of birth", 400, "INVALID_DOB");
             }
 
-            const ssnHash = await hashSsn(parsed.normalized);
-
-            // Guard the partial unique index with a friendly error rather
-            // than letting the constraint surface as a 500.
-            const existing = await db
-                .select({ id: users.id })
-                .from(users)
-                .where(and(eq(users.ssnHash, ssnHash), ne(users.id, user.id)))
-                .limit(1);
-            if (existing.length > 0) {
-                throw new AppError(
-                    "That personnummer is already registered to another account",
-                    409,
-                    "SSN_ALREADY_REGISTERED",
-                );
-            }
-
+            // DOB is freely settable — no uniqueness check, no
+            // identity proof (it's not identity).
             await db
                 .update(users)
-                .set({
-                    ssn: await encrypt(parsed.display),
-                    ssnHash,
-                    updatedAt: new Date(),
-                })
+                .set({ birthDate: parsed, updatedAt: new Date() })
                 .where(eq(users.id, user.id));
 
-            // Echo back the readable value only — never the ciphertext.
-            return { ssn: parsed.display, kind: parsed.kind };
+            return { birthDate: parsed };
         },
         {
             body: t.Object({
-                ssn: t.String({ minLength: 1 }),
+                birthDate: t.String({ pattern: DOB_PATTERN }),
             }),
         },
     )
