@@ -4,6 +4,36 @@ export default {
         title: "Karen",
         subtitle: "Studentpubens evenemangssystem",
         credit: 'Skapad av Filip "Mr.Mime" Nyquist',
+        privacy: "Integritet",
+    },
+    privacy: {
+        title: "Integritetspolicy",
+        lastUpdated: "Senast uppdaterad: 2026-08-15",
+        intro: "Karen drivs av en studentpub för att sköta evenemang. Här förklarar vi vilken data vi samlar in, varför, och vilka val du har.",
+        collect: {
+            heading: "Vad vi samlar in",
+            body: "För att kunna skapa ett konto och genomföra evenemang åt dig lagrar vi: din e-postadress och ett bcrypt-hashat lösenord; ditt namn, smeknamn, valfri profilbild och roll; ditt svenska personnummer — krypterat i vila med AES-256-GCM och endast läsbart av evenemangsansvariga och av dig själv; aktivitet du skapar (kommentarer, gästregistreringar, arbetspass, biljettskanningar, fritext-rapporter); samt en session-cookie som löper ut efter 30 dagars inaktivitet.",
+        },
+        legalBasis: {
+            heading: "Varför vi sparar det (rättslig grund)",
+            body: "Kontoskapandet sker med ditt samtycke (du registrerade dig). Att driva puben är vårt berättigade intresse. Att lagra ditt krypterade personnummer sker med ditt samtycke, givet när du verifierade din studentstatus.",
+        },
+        rights: {
+            heading: "Dina rättigheter",
+            body: "Du kan när som helst se din data via /profile/me och /api/profiles/me. Du kan korrigera ditt namn, smeknamn, beskrivning och profilbild via /profile/edit. För att få ditt konto och PII raderade, eller för att få en JSON-export av din data, mejla admin@karen.se. Radering tar bort din PII men anonymiserade audit-uppgifter finns kvar för operativ ansvarsskyldighet.",
+        },
+        retention: {
+            heading: "Lagringstid",
+            body: "Aktiva konton sparas så länge kontot finns. Audit-loggen sparas för operativ ansvarsskyldighet. Raderade konton får sin PII borttagen; anonymiserade audit-uppgifter kan leva kvar längre för att bevara en ärlig historik.",
+        },
+        contact: {
+            heading: "Kontakt",
+            body: "För integritetsfrågor, kontoradering eller dataexport, mejla admin@karen.se.",
+        },
+        cookies: {
+            heading: "Cookies",
+            body: "Vi använder endast strikt nödvändiga cookies: en session-cookie för att hålla dig inloggad, och en CSRF-cookie som skyddar mot cross-site-formulär. Inga spårnings-, analys- eller reklamcookies sätts.",
+        },
     },
     nav: {
         home: "Hem",

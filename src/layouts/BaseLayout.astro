@@ -122,17 +122,23 @@ Astro.csp?.insertScriptHash(sha256ScriptHash(layoutScript));
     </main>
     <footer class="bg-white dark:bg-gray-900 border-t border-gray-200 dark:border-gray-800 mt-auto">
       <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-        <div class="flex flex-col sm:flex-row justify-between items-center gap-4">
-          <p class="text-sm text-gray-500 dark:text-gray-400">
+        <div class="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3 text-sm">
+          <p class="text-gray-500 dark:text-gray-400">
             {t('site.title')} &mdash; {t('site.subtitle')}
           </p>
-          <p class="text-sm text-gray-400 dark:text-gray-500">
-            &copy; {new Date().getFullYear()}
+          <p class="text-gray-400 dark:text-gray-500 text-center">
+            {t('site.credit')}
+          </p>
+          <p class="text-gray-400 dark:text-gray-500 flex items-center justify-center sm:justify-end gap-3">
+            <span>&copy; {new Date().getFullYear()}</span>
+            <a
+              href="/privacy"
+              class="hover:text-gray-700 dark:hover:text-gray-200 underline-offset-2 hover:underline"
+            >
+              {t('site.privacy')}
+            </a>
           </p>
         </div>
-        <p class="mt-2 text-center text-xs text-gray-400 dark:text-gray-500">
-          {t('site.credit')}
-        </p>
       </div>
     </footer>
 
