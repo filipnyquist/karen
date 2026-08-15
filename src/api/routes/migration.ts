@@ -321,114 +321,128 @@ async function executeMerge(
     realUserId: string,
     mappingId: string,
 ) {
-    // 1. Reassign worker registrations
-    await db
-        .update(workerRegistrations)
-        .set({ userId: realUserId })
-        .where(eq(workerRegistrations.userId, placeholderId));
+    // Run the whole merge in a single transaction. If any step fails (in
+    // particular the final DELETE on the placeholder user, which trips
+    // audit_log FK constraints), every prior statement — including the
+    // `users.verified = true` set on the real user — rolls back. Without
+    // this, a failed merge silently grants verified=true to the attacker
+    // while returning HTTP 500 to the caller.
+    return await db.transaction(async (tx) => {
+        // 1. Reassign worker registrations
+        await tx
+            .update(workerRegistrations)
+            .set({ userId: realUserId })
+            .where(eq(workerRegistrations.userId, placeholderId));
 
-    // 2. Reassign comments
-    await db
-        .update(comments)
-        .set({ userId: realUserId })
-        .where(eq(comments.userId, placeholderId));
+        // 2. Reassign comments
+        await tx
+            .update(comments)
+            .set({ userId: realUserId })
+            .where(eq(comments.userId, placeholderId));
 
-    // 3. Reassign pub team memberships
-    await db
-        .update(pubTeamMembers)
-        .set({ userId: realUserId })
-        .where(eq(pubTeamMembers.userId, placeholderId));
+        // 3. Reassign pub team memberships
+        await tx
+            .update(pubTeamMembers)
+            .set({ userId: realUserId })
+            .where(eq(pubTeamMembers.userId, placeholderId));
 
-    // 4. Reassign guest registrations
-    await db
-        .update(guestRegistrations)
-        .set({ reporterId: realUserId })
-        .where(eq(guestRegistrations.reporterId, placeholderId));
+        // 4. Reassign guest registrations
+        await tx
+            .update(guestRegistrations)
+            .set({ reporterId: realUserId })
+            .where(eq(guestRegistrations.reporterId, placeholderId));
 
-    // 5. Reassign tickets
-    await db
-        .update(tickets)
-        .set({ userId: realUserId })
-        .where(eq(tickets.userId, placeholderId));
+        // 5. Reassign tickets
+        await tx
+            .update(tickets)
+            .set({ userId: realUserId })
+            .where(eq(tickets.userId, placeholderId));
 
-    // 6. Reassign educations
-    await db
-        .update(userEducations)
-        .set({ userId: realUserId })
-        .where(eq(userEducations.userId, placeholderId));
+        // 6. Reassign educations
+        await tx
+            .update(userEducations)
+            .set({ userId: realUserId })
+            .where(eq(userEducations.userId, placeholderId));
 
-    // Count affected rows
-    const [workerCount] = await db
-        .select({ count: sql<number>`count(*)::int` })
-        .from(workerRegistrations)
-        .where(eq(workerRegistrations.userId, realUserId));
-    const [commentCount] = await db
-        .select({ count: sql<number>`count(*)::int` })
-        .from(comments)
-        .where(eq(comments.userId, realUserId));
-    const [teamCount] = await db
-        .select({ count: sql<number>`count(*)::int` })
-        .from(pubTeamMembers)
-        .where(eq(pubTeamMembers.userId, realUserId));
-    const [ticketCount] = await db
-        .select({ count: sql<number>`count(*)::int` })
-        .from(tickets)
-        .where(eq(tickets.userId, realUserId));
-    const [guestCount] = await db
-        .select({ count: sql<number>`count(*)::int` })
-        .from(guestRegistrations)
-        .where(eq(guestRegistrations.reporterId, realUserId));
+        // Count affected rows
+        const [workerCount] = await tx
+            .select({ count: sql<number>`count(*)::int` })
+            .from(workerRegistrations)
+            .where(eq(workerRegistrations.userId, realUserId));
+        const [commentCount] = await tx
+            .select({ count: sql<number>`count(*)::int` })
+            .from(comments)
+            .where(eq(comments.userId, realUserId));
+        const [teamCount] = await tx
+            .select({ count: sql<number>`count(*)::int` })
+            .from(pubTeamMembers)
+            .where(eq(pubTeamMembers.userId, realUserId));
+        const [ticketCount] = await tx
+            .select({ count: sql<number>`count(*)::int` })
+            .from(tickets)
+            .where(eq(tickets.userId, realUserId));
+        const [guestCount] = await tx
+            .select({ count: sql<number>`count(*)::int` })
+            .from(guestRegistrations)
+            .where(eq(guestRegistrations.reporterId, realUserId));
 
-    // 6. Transfer data from placeholder to real user (if real user hasn't set them)
-    const [placeholder] = await db
-        .select()
-        .from(users)
-        .where(eq(users.id, placeholderId))
-        .limit(1);
-    const [realUser] = await db
-        .select()
-        .from(users)
-        .where(eq(users.id, realUserId))
-        .limit(1);
+        // 7. Transfer data from placeholder to real user (if real user hasn't set them)
+        const [placeholder] = await tx
+            .select()
+            .from(users)
+            .where(eq(users.id, placeholderId))
+            .limit(1);
+        const [realUser] = await tx
+            .select()
+            .from(users)
+            .where(eq(users.id, realUserId))
+            .limit(1);
 
-    if (placeholder && realUser) {
-        const updates: Partial<typeof users.$inferInsert> = {};
-        if (!realUser.nickname && placeholder.nickname)
-            updates.nickname = placeholder.nickname;
-        if (!realUser.name && placeholder.name) updates.name = placeholder.name;
-        if (!realUser.profilePic && placeholder.profilePic)
-            updates.profilePic = placeholder.profilePic;
+        if (placeholder && realUser) {
+            const updates: Partial<typeof users.$inferInsert> = {};
+            if (!realUser.nickname && placeholder.nickname)
+                updates.nickname = placeholder.nickname;
+            if (!realUser.name && placeholder.name)
+                updates.name = placeholder.name;
+            if (!realUser.profilePic && placeholder.profilePic)
+                updates.profilePic = placeholder.profilePic;
 
-        updates.verified = true;
+            updates.verified = true;
 
-        if (Object.keys(updates).length > 0) {
-            await db.update(users).set(updates).where(eq(users.id, realUserId));
+            if (Object.keys(updates).length > 0) {
+                await tx
+                    .update(users)
+                    .set(updates)
+                    .where(eq(users.id, realUserId));
+            }
         }
-    }
 
-    // 7. Update legacy mapping first (clears FK reference to placeholder user)
-    await db
-        .update(legacyMappings)
-        .set({
-            realUserId,
-            migratedAt: new Date(),
-            migrationToken: null,
-            migrationTokenExpiry: null,
-            adminRequested: false,
-        })
-        .where(eq(legacyMappings.id, mappingId));
+        // 8. Update legacy mapping (clears the migration token)
+        await tx
+            .update(legacyMappings)
+            .set({
+                realUserId,
+                migratedAt: new Date(),
+                migrationToken: null,
+                migrationTokenExpiry: null,
+                adminRequested: false,
+            })
+            .where(eq(legacyMappings.id, mappingId));
 
-    // 8. Delete the placeholder user (all data has been reassigned, FK references cleared)
-    await db.delete(users).where(eq(users.id, placeholderId));
+        // 9. Delete the placeholder user. If this fails on audit_log FK
+        // (restrict), the transaction rolls back atomically — no silent
+        // verified=true side effect.
+        await tx.delete(users).where(eq(users.id, placeholderId));
 
-    return {
-        success: true,
-        stats: {
-            workerRegistrations: workerCount?.count ?? 0,
-            comments: commentCount?.count ?? 0,
-            teamMemberships: teamCount?.count ?? 0,
-            tickets: ticketCount?.count ?? 0,
-            guestRegistrations: guestCount?.count ?? 0,
-        },
-    };
+        return {
+            success: true,
+            stats: {
+                workerRegistrations: workerCount?.count ?? 0,
+                comments: commentCount?.count ?? 0,
+                teamMemberships: teamCount?.count ?? 0,
+                tickets: ticketCount?.count ?? 0,
+                guestRegistrations: guestCount?.count ?? 0,
+            },
+        };
+    });
 }

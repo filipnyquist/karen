@@ -13,6 +13,18 @@ import { AppError } from "../middleware/error";
 
 export const profileRoutes = new Elysia({ prefix: "/profiles" })
     .derive(authDerive)
+    .get("/me/ssn", async ({ user }) => {
+        // Returns the current user's own SSN, decrypted. Used by
+        // <GuestManager> to fetch the reporter's SSN on demand when the
+        // guest modal opens — kept out of the SSR payload so the
+        // decrypted personnummer never ships in HTML.
+        const [row] = await db
+            .select({ ssn: users.ssn })
+            .from(users)
+            .where(eq(users.id, user.id))
+            .limit(1);
+        return { ssn: row?.ssn ? await decrypt(row.ssn) : null };
+    })
     .get("/me", async ({ user }) => {
         const result = await db
             .select({

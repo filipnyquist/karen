@@ -12,9 +12,6 @@ interface GuestManagerProps {
      * page already gates the modal trigger behind login). */
     isAuthenticated: boolean;
     maxGuestsPerUser: number;
-    /** The viewer's own SSN, decrypted server-side. Null until they
-     * register one — the add form is blocked while it is. */
-    reporterSsn: string | null;
     /** Shown in the "adding as …" strip once the SSN is on file. */
     reporterDisplayName: string;
     t: Record<string, string>;
@@ -68,7 +65,6 @@ export default function GuestManager({
     isVerified,
     isAuthenticated,
     maxGuestsPerUser,
-    reporterSsn,
     reporterDisplayName,
     t,
 }: GuestManagerProps) {
@@ -86,9 +82,10 @@ export default function GuestManager({
     const [successMessage, setSuccessMessage] = useState("");
     const [adminOverride, setAdminOverride] = useState(false);
 
-    // Own-SSN capture. `ownSsn` starts from the server-rendered prop and is
-    // updated in place after a save, so the banner collapses without a reload.
-    const [ownSsn, setOwnSsn] = useState<string | null>(reporterSsn);
+    // Own-SSN capture. The decrypted SSN is fetched client-side from
+    // /api/profiles/me/ssn — NOT shipped in the SSR payload — so the
+    // modal may briefly show "no SSN on file" until the fetch resolves.
+    const [ownSsn, setOwnSsn] = useState<string | null>(null);
     const [ownSsnInput, setOwnSsnInput] = useState("");
     const [savingOwnSsn, setSavingOwnSsn] = useState(false);
     const [ownSsnError, setOwnSsnError] = useState("");
@@ -106,6 +103,14 @@ export default function GuestManager({
             return;
         }
         fetchMyGuests();
+        // Fetch the reporter's own SSN from the server. This is the
+        // client-side equivalent of the old SSR-rendered `reporterSsn`
+        // prop — the decrypted personnummer is now only ever in browser
+        // memory, never in the SSR HTML payload.
+        fetch("/api/profiles/me/ssn", { credentials: "same-origin" })
+            .then((r) => (r.ok ? r.json() : { ssn: null }))
+            .then((d) => setOwnSsn(d?.ssn ?? null))
+            .catch(() => setOwnSsn(null));
     }, [eventId, isAuthenticated]);
 
     useEffect(() => {

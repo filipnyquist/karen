@@ -23,15 +23,27 @@ const page = parseInt(Astro.url.searchParams.get('page') ?? '1');
 const workLimit = 10;
 const workOffset = (page - 1) * workLimit;
 
-// Fetch user
+// Fetch user — explicit projection of only the fields the template renders.
+// Anything sensitive (email, ssn, ssnHash, passwordHash, emailVerified,
+// seenMigrationPrompt, updatedAt, createdAt) stays in the DB and never
+// enters the SSR scope.
 const [profileUser] = await db
-  .select()
-  .from(users)
-  .where(eq(users.id, profileId))
-  .limit(1);
+    .select({
+        id: users.id,
+        nickname: users.nickname,
+        name: users.name,
+        description: users.description,
+        profilePic: users.profilePic,
+        verified: users.verified,
+        role: users.role,
+        isLegacy: users.isLegacy,
+    })
+    .from(users)
+    .where(eq(users.id, profileId))
+    .limit(1);
 
 if (!profileUser) {
-  return Astro.redirect('/');
+    return Astro.redirect('/');
 }
 
 

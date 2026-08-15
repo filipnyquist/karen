@@ -323,6 +323,10 @@ export const pubTeams = pgTable("pub_teams", {
     description: text("description"),
     teamColor: text("team_color"),
     teamPic: text("team_pic"),
+    // 8-char base32 join code. Always required — teams are invite-only by
+    // default, no open enrollment. Regenerate via the team-admin endpoint
+    // to invalidate an old code.
+    joinCode: varchar("join_code", { length: 8 }).notNull().unique(),
     createdBy: uuid("created_by").references(() => users.id),
     createdAt: timestamp("created_at", { withTimezone: true })
         .defaultNow()

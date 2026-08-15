@@ -70,14 +70,45 @@ const teamScript = `(function(){
     leaveConfirm: ${JSON.stringify(memberCount <= 1 ? (t('team.lastMemberWarning') || 'You are the last member. Leaving will delete this team.') : t('team.leaveTeam') + '?')}
   };
 
-  async function joinTeam() {
+  async function joinTeam(code) {
     try {
-      const res = await fetch('/api/teams/' + teamId + '/join', { method: 'POST', credentials: 'same-origin' });
+      const res = await fetch('/api/teams/' + teamId + '/join', {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ code: code }),
+      });
       if (res.ok) { location.reload(); }
       else { const d = await res.json(); window.appAlert(d.error || t.failed); }
     } catch { window.appAlert(t.networkError); }
   }
   window.joinTeam = joinTeam;
+
+  async function regenerateCode() {
+    try {
+      const res = await fetch('/api/teams/' + teamId + '/regenerate-code', {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+      });
+      if (res.ok) { location.reload(); }
+      else { const d = await res.json(); window.appAlert(d.error || t.failed); }
+    } catch { window.appAlert(t.networkError); }
+  }
+  window.regenerateCode = regenerateCode;
+
+  // Wire the join form so a single submit handler reads the code input.
+  document.body.addEventListener('submit', (e) => {
+    const form = e.target instanceof Element ? e.target.closest('form[data-action="join-team"]') : null;
+    if (!form) return;
+    e.preventDefault();
+    const code = form.querySelector('input[name="code"]').value.trim();
+    if (code.length !== 8) {
+      window.appAlert(t.codeMustBe8Chars || 'Join code must be 8 characters');
+      return;
+    }
+    joinTeam(code);
+  });
 
   function leaveTeam() {
     window.appConfirm(t.leaveConfirm, async () => {
@@ -137,7 +168,8 @@ const teamScript = `(function(){
     const action = target.getAttribute('data-action');
     const userId = target.getAttribute('data-user-id');
     switch (action) {
-      case 'join-team': joinTeam(); break;
+      case 'join-team': /* handled by form submit listener above */ break;
+      case 'regenerate-code': regenerateCode(); break;
       case 'leave-team': leaveTeam(); break;
       case 'delete-team': deleteTeam(); break;
       case 'toggle-team-admin': {
@@ -195,7 +227,7 @@ Astro.csp?.insertScriptHash(sha256ScriptHash(teamScript));
       </div>
 
       <!-- Action buttons -->
-      <div class="mt-4 flex flex-wrap gap-2">
+      <div class="mt-4 flex flex-wrap gap-2 items-start">
         {currentUser && (
           isMember ? (
             <button
@@ -205,12 +237,29 @@ Astro.csp?.insertScriptHash(sha256ScriptHash(teamScript));
               {t('team.leaveTeam')}
             </button>
           ) : (
-            <button
+            <form
               data-action="join-team"
-              class="px-4 py-2 rounded-md text-sm font-medium bg-blue-600 text-white hover:bg-blue-700 transition-colors"
+              class="flex flex-col sm:flex-row gap-2 items-stretch sm:items-center"
             >
-              {t('team.joinTeam')}
-            </button>
+              <label for="join-code-input" class="sr-only">{t('team.joinCode') || 'Join code'}</label>
+              <input
+                id="join-code-input"
+                name="code"
+                type="text"
+                required
+                minLength={8}
+                maxLength={8}
+                autocomplete="off"
+                placeholder={t('team.joinCodePlaceholder') || '8-char code'}
+                class="px-3 py-2 rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-sm font-mono tracking-wider uppercase w-32"
+              />
+              <button
+                type="submit"
+                class="px-4 py-2 rounded-md text-sm font-medium bg-blue-600 text-white hover:bg-blue-700 transition-colors"
+              >
+                {t('team.joinTeam')}
+              </button>
+            </form>
           )
         )}
         {isTeamAdmin && (
@@ -219,6 +268,19 @@ Astro.csp?.insertScriptHash(sha256ScriptHash(teamScript));
               {t('common.edit')}
             </a>
           </Fragment>
+        )}
+        {isTeamAdmin && (
+          <div class="flex flex-col sm:flex-row gap-2 items-stretch sm:items-center w-full sm:w-auto">
+            <span class="text-xs text-gray-500 dark:text-gray-400 uppercase tracking-wide">{t('team.joinCode') || 'Join code'}</span>
+            <code class="px-3 py-2 rounded-md border border-gray-300 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-sm font-mono tracking-wider">{team.joinCode}</code>
+            <button
+              data-action="regenerate-code"
+              class="px-3 py-2 rounded-md text-sm font-medium bg-amber-100 text-amber-700 hover:bg-amber-200 dark:bg-amber-900 dark:text-amber-300 dark:hover:bg-amber-800 transition-colors"
+              title={t('team.regenerateCodeTitle') || 'Invalidate the current code and generate a new one'}
+            >
+              {t('team.regenerate') || 'Regenerate'}
+            </button>
+          </div>
         )}
         {currentUser && isAdmin(currentUser.role) && (
           <button

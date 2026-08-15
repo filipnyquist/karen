@@ -10,6 +10,7 @@ import { chmodSync, existsSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { eq, sql } from "drizzle-orm";
 import { encrypt, hashSsn } from "../lib/encryption";
+import { generateJoinCode } from "../utils/joinCode";
 import { db } from "./index";
 import {
     comments,
@@ -430,6 +431,7 @@ async function seed() {
                 name,
                 description,
                 teamColor: color,
+                joinCode: generateJoinCode(),
                 createdBy: creatorId,
             })
             .returning();

@@ -6,10 +6,12 @@ import { flattenTranslations } from '../../i18n/index';
 import { db } from '../../db';
 import { events, reports, locations, workerRegistrations, users } from '../../db/schema';
 import { eq } from 'drizzle-orm';
-import { requireAuth } from '../../lib/guards';
+import { requireResponsibleOrAdmin } from '../../lib/guards';
 
 const t = Astro.locals.t;
-const guard = requireAuth(Astro);
+// Page-level gate: matches the API gate (`responsibleOrAdminDerive("eventId")`).
+// Anonymous viewers go to /login; logged-in non-responsibles go to /.
+const guard = await requireResponsibleOrAdmin(Astro, "eventId");
 if (guard instanceof Response) return guard;
 const currentUser = guard;
 const eventId = Astro.params.eventId!;

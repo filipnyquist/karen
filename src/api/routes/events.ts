@@ -88,7 +88,24 @@ export const eventRoutes = new Elysia()
             .derive(responsibleOrAdminDerive("id"))
             .put(
                 "/:id",
-                async ({ params, body }) => {
+                async ({ params, body, user }) => {
+                    // Enforce the same rule as the dedicated /lock endpoint:
+                    // only admins may flip `locked: false`. The dedicated
+                    // endpoint also handles the `issueTickets` side effect,
+                    // so prefer that route for lock-state changes.
+                    //
+                    // Elysia 1.4 strips unknown body fields silently, but
+                    // `locked` is still in the schema so it survives here.
+                    if (
+                        body.locked === false &&
+                        !isAdmin(user.role)
+                    ) {
+                        throw new AppError(
+                            "Only admins can unlock events — use POST /api/events/:id/lock",
+                            403,
+                            "FORBIDDEN",
+                        );
+                    }
                     const updated = await updateEvent(params.id, body);
                     return updated;
                 },

@@ -21,7 +21,6 @@ import {
 } from '../../db/schema';
 import { eq, and, or, sql, desc, inArray } from 'drizzle-orm';
 import { isAdmin } from '../../api/middleware/auth';
-import { decrypt } from '../../lib/encryption';
 
 const t = Astro.locals.t;
 const lang = Astro.locals.lang ?? 'sv';
@@ -204,18 +203,11 @@ const isCurrentUserAdminOrResponsible = currentUser
   ? (isAdmin(currentUser.role) || isCurrentUserResponsible)
   : false;
 
-// The guest form needs the viewer's own SSN so it can skip the one-time
-// prompt for members who already registered one. Decrypted here rather than
-// fetched client-side so the modal renders in its final state immediately.
-let currentUserSsn: string | null = null;
-if (currentUser) {
-  const [row] = await db
-    .select({ ssn: users.ssn })
-    .from(users)
-    .where(eq(users.id, currentUser.id))
-    .limit(1);
-  currentUserSsn = row?.ssn ? await decrypt(row.ssn) : null;
-}
+// The guest form needs the viewer's own SSN to skip the one-time prompt
+// for members who already registered one. We deliberately do NOT decrypt
+// it server-side here — the decrypted personnummer would ship in the
+// initial HTML payload. <GuestManager> fetches it from /api/profiles/me/ssn
+// when the modal becomes visible.
 
 // Check if current user can scan tickets for this event
 const scanEventStart = new Date(event.startDate);
@@ -737,7 +729,7 @@ Astro.csp?.insertScriptHash(sha256ScriptHash(eventScript));
         </button>
       </div>
       <div class="p-6 overflow-y-auto flex-1">
-        <GuestManager client:load eventId={eventId} isAdmin={isAdmin(currentUser?.role ?? null)} isResponsible={isCurrentUserResponsible} isVerified={!!currentUser?.verified} isAuthenticated={isAuth} maxGuestsPerUser={event.maxGuestsPerUser ?? 3} reporterSsn={currentUserSsn} reporterDisplayName={currentUser?.name ?? currentUser?.nickname ?? currentUser?.email ?? ''} t={translations} />
+        <GuestManager client:load eventId={eventId} isAdmin={isAdmin(currentUser?.role ?? null)} isResponsible={isCurrentUserResponsible} isVerified={!!currentUser?.verified} isAuthenticated={isAuth} maxGuestsPerUser={event.maxGuestsPerUser ?? 3} reporterDisplayName={currentUser?.name ?? currentUser?.nickname ?? currentUser?.email ?? ''} t={translations} />
       </div>
     </div>
   </div>
