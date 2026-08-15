@@ -83,8 +83,12 @@ export const ticketRoutes = new Elysia()
                     return preview;
                 },
                 {
+                    // Token format: 64-char hex (current generator) is
+                    // 256 bits of entropy, but any 16-256-char opaque
+                    // string is acceptable — the DB does an exact-match
+                    // equality lookup.
                     body: t.Object({
-                        token: t.String({ minLength: 64, maxLength: 64 }),
+                        token: t.String({ minLength: 16, maxLength: 256 }),
                         eventId: t.String({ format: "uuid" }),
                     }),
                 },
@@ -124,7 +128,7 @@ export const ticketRoutes = new Elysia()
                 },
                 {
                     body: t.Object({
-                        token: t.String({ minLength: 64, maxLength: 64 }),
+                        token: t.String({ minLength: 16, maxLength: 256 }),
                         eventId: t.String({ format: "uuid" }),
                     }),
                 },
