@@ -1,11 +1,5 @@
 // src/utils/validation.ts
 
-/** Validates Swedish SSN format: YYYYMMDD-XXXX or YYYYMMDDXXXX */
-export function isValidSwedishSsn(ssn: string): boolean {
-    const cleaned = ssn.replace(/[-]/g, "");
-    return /^\d{12}$/.test(cleaned);
-}
-
 /** Validates email format */
 export function isValidEmail(email: string): boolean {
     return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);

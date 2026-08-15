@@ -10,7 +10,6 @@
 
 import { eq } from "drizzle-orm";
 import mysql, { type RowDataPacket } from "mysql2/promise";
-import { encrypt, hashSsn } from "../lib/encryption";
 import { generateJoinCode } from "../utils/joinCode";
 import { db } from "./index";
 import {
@@ -633,6 +632,11 @@ async function main() {
     WHERE gr.event_id IS NOT NULL AND gr.reporter_id IS NOT NULL
   `);
 
+    // Note: the legacy dump may or may not include a date of birth
+    // column. We don't import a `guest_birth_date` here — the legacy
+    // schema predates DOB tracking. If you need DOB for legacy
+    // guests, add a `guest_birth_date` SELECT here.
+
     let guestRegsImported = 0;
     let guestRegsSkipped = 0;
     for (const gr of oldGuestRegs) {
@@ -643,29 +647,24 @@ async function main() {
             continue;
         }
 
-        // Deduplicate by (guestSsnHash, eventId) to match the new DB unique index
-        let ssnHash: string | null = null;
-        if (gr.guest_ssn) {
-            ssnHash = await hashSsn(gr.guest_ssn);
-            const existing = await db
-                .select()
-                .from(guestRegistrations)
-                .where(eq(guestRegistrations.eventId, newEventId))
-                .limit(500);
-            if (existing.some((r) => r.guestSsnHash === ssnHash)) {
-                continue;
-            }
+        // Deduplicate by (eventId, guestName) so the same legacy guest
+        // isn't imported twice if they appear multiple times in the
+        // dump. (The old SSN-hash dedup is gone with the SSN.)
+        const guestName = gr.guest_name || "";
+        const existing = await db
+            .select()
+            .from(guestRegistrations)
+            .where(eq(guestRegistrations.eventId, newEventId))
+            .limit(500);
+        if (existing.some((r) => r.guestName === guestName)) {
+            continue;
         }
-
-        const encryptedSsn = gr.guest_ssn ? await encrypt(gr.guest_ssn) : null;
 
         await db.insert(guestRegistrations).values({
             eventId: newEventId,
             reporterId: placeholderId,
-            guestName: gr.guest_name || "",
+            guestName,
             guestEmail: gr.guest_email || null,
-            guestSsn: encryptedSsn,
-            guestSsnHash: ssnHash,
         });
         guestRegsImported++;
     }

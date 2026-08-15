@@ -63,31 +63,32 @@ test.describe("Auth bypass / privilege grant paths", () => {
         ).toBe(beforeBody.verified);
     });
 
-    test("P0-4: any logged-in user can claim any SSN (no identity proof)", async ({
+    test("P0-4 (resolved): any logged-in user can set their own birth-date", async ({
         page,
     }) => {
-        // Alice is already verified but has no SSN. PUT /api/profiles/me/ssn
-        // should currently succeed even though there is no proof the SSN
-        // actually belongs to alice. We don't pin a specific SSN value
-        // because parallel tests (P0-2) may race; we just check the claim
-        // succeeded and a SSN is on file.
+        // The original P0-4 ("any user can claim any SSN") is moot now
+        // that we don't store SSNs. The new endpoint PUT
+        // /api/profiles/me/birth-date accepts any valid ISO date from any
+        // authenticated user, with no identity proof — because DOB isn't
+        // identity. This spec asserts the new behaviour.
         await login(page, "alice");
 
-        const claim = await page.request.put("/api/profiles/me/ssn", {
-            data: { ssn: "19990101-0000" },
+        const claim = await page.request.put("/api/profiles/me/birth-date", {
+            data: { birthDate: "1999-01-01" },
         });
         expect(
             claim.ok(),
-            `BUG: SSN claim should currently succeed for any logged-in user (status=${claim.status()}, body=${await claim.text()})`,
+            `PUT /api/profiles/me/birth-date should succeed for any logged-in user (status=${claim.status()})`,
         ).toBe(true);
 
         const me = await page.request.get("/api/profiles/me");
         expect(me.ok()).toBe(true);
-        const body = (await me.json()) as { ssn: string | null };
+        const body = (await me.json()) as { birthDate: string | null };
         expect(
-            body.ssn,
-            "alice should have an SSN on file after the claim",
+            body.birthDate,
+            "alice should have a birth-date on file after the claim",
         ).toBeTruthy();
+        expect(body.birthDate).toBe("1999-01-01");
     });
 
     test("P0-5: admin can self-verify by passing their own userId", async ({

@@ -4,11 +4,10 @@ import { findUserId, login } from "../helpers/auth";
 /**
  * P1-8 — verify profile/[id].astro over-fetch.
  *
- * Per pentest plan: src/pages/profile/[id].astro:18-35 selects the full
- * `users` row (incl. encrypted SSN + ssnHash). Only a subset is rendered.
- * The encrypted SSN lives in server memory for every profile-page hit,
- * and any future template edit could leak it. Verify anon viewer cannot
- * see decrypted SSN, but the encrypted form is present in the HTML.
+ * The original P1-8 finding (SELECT * pulled encrypted SSN into the
+ * SSR scope) was fixed by switching to an explicit projection that
+ * excludes `birthDate`. This spec keeps a regression guard for the
+ * remaining PII surface (email).
  */
 
 test.describe("Profile page over-fetch (P1-8)", () => {
@@ -30,18 +29,11 @@ test.describe("Profile page over-fetch (P1-8)", () => {
         expect(res.ok()).toBe(true);
         const html = await res.text();
 
-        // PII not exposed: no plaintext email, no full real name (anonymized).
-        // Encrypted SSN ciphertext (ivHex:ciphertextHex form) might be in
-        // the HTML — that's the over-fetch surface but not a direct PII
-        // leak (without ENCRYPTION_KEY it can't be decrypted).
+        // PII not exposed: no plaintext email.
         expect(
             html.includes("alice@karen.se"),
             "anon viewer must NOT see alice's email on the profile page",
         ).toBe(false);
-        // The seed gives alice no SSN; if a future SSN were assigned, the
-        // encrypted form would be in scope. Static reading confirms the
-        // SELECT * pulls `ssn`. We can't assert that here, but the static
-        // finding stands.
         await anonCtx.close();
     });
 });

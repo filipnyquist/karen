@@ -24,9 +24,9 @@ const workLimit = 10;
 const workOffset = (page - 1) * workLimit;
 
 // Fetch user — explicit projection of only the fields the template renders.
-// Anything sensitive (email, ssn, ssnHash, passwordHash, emailVerified,
-// seenMigrationPrompt, updatedAt, createdAt) stays in the DB and never
-// enters the SSR scope.
+// Anything sensitive (email, birthDate, passwordHash, emailVerified,
+// seenMigrationPrompt, updatedAt, createdAt) stays in the DB and
+// never enters the SSR scope.
 const [profileUser] = await db
     .select({
         id: users.id,

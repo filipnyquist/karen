@@ -1,6 +1,5 @@
 // src/islands/GuestManager.tsx
 import { useEffect, useState } from "preact/hooks";
-import { isPersonnummer, parseSsn } from "../lib/ssn";
 
 interface GuestManagerProps {
     eventId: string;
@@ -12,7 +11,7 @@ interface GuestManagerProps {
      * page already gates the modal trigger behind login). */
     isAuthenticated: boolean;
     maxGuestsPerUser: number;
-    /** Shown in the "adding as …" strip once the SSN is on file. */
+    /** Shown in the "adding as …" strip once the date of birth is on file. */
     reporterDisplayName: string;
     t: Record<string, string>;
 }
@@ -21,38 +20,25 @@ interface Guest {
     id: string;
     guestName: string;
     guestEmail: string | null;
-    guestSsn: string | null;
+    guestBirthDate: string | null;
     reporterId?: string;
     createdAt: string;
     /** Present only on the /all endpoint (joined from users). */
     reporterName?: string | null;
     reporterNickname?: string | null;
-    reporterSsn?: string | null;
 }
 
 interface AddGuestForm {
     guestName: string;
     guestEmail: string;
-    guestSsn: string;
+    guestBirthDate: string;
 }
 
 type Mode = "mine" | "all";
 
-/**
- * Render an SSN the way its kind deserves: a personnummer is a fixed-width
- * identifier and reads better monospaced; a free-text value (foreign guests)
- * is prose and shouldn't pretend otherwise.
- */
-function SsnValue({ value, muted }: { value: string; muted?: boolean }) {
-    const mono = isPersonnummer(value);
+function DobValue({ value }: { value: string }) {
     return (
-        <span
-            class={`${mono ? "font-mono" : "italic"} text-xs ${
-                muted
-                    ? "text-gray-500 dark:text-gray-400"
-                    : "text-gray-700 dark:text-gray-300"
-            }`}
-        >
+        <span class="font-mono text-xs text-gray-700 dark:text-gray-300">
             {value}
         </span>
     );
@@ -74,7 +60,7 @@ export default function GuestManager({
     const [form, setForm] = useState<AddGuestForm>({
         guestName: "",
         guestEmail: "",
-        guestSsn: "",
+        guestBirthDate: "",
     });
     const [loading, setLoading] = useState(true);
     const [submitting, setSubmitting] = useState(false);
@@ -82,20 +68,21 @@ export default function GuestManager({
     const [successMessage, setSuccessMessage] = useState("");
     const [adminOverride, setAdminOverride] = useState(false);
 
-    // Own-SSN capture. The decrypted SSN is fetched client-side from
-    // /api/profiles/me/ssn — NOT shipped in the SSR payload — so the
-    // modal may briefly show "no SSN on file" until the fetch resolves.
-    const [ownSsn, setOwnSsn] = useState<string | null>(null);
-    const [ownSsnInput, setOwnSsnInput] = useState("");
-    const [savingOwnSsn, setSavingOwnSsn] = useState(false);
-    const [ownSsnError, setOwnSsnError] = useState("");
-    const [editingOwnSsn, setEditingOwnSsn] = useState(false);
+    // Own date-of-birth capture. Fetched client-side from
+    // /api/profiles/me/birth-date — NOT shipped in the SSR payload — so
+    // the modal may briefly show "no date of birth on file" until the
+    // fetch resolves.
+    const [ownBirthDate, setOwnBirthDate] = useState<string | null>(null);
+    const [ownBirthDateInput, setOwnBirthDateInput] = useState("");
+    const [savingOwnBirthDate, setSavingOwnBirthDate] = useState(false);
+    const [ownBirthDateError, setOwnBirthDateError] = useState("");
+    const [editingOwnBirthDate, setEditingOwnBirthDate] = useState(false);
 
     const canSeeAll = isAdmin || isResponsible;
     const remaining = Math.max(0, maxGuestsPerUser - myGuests.length);
     const canAdd =
         isVerified && (myGuests.length < maxGuestsPerUser || adminOverride);
-    const needsOwnSsn = !ownSsn || editingOwnSsn;
+    const needsOwnBirthDate = !ownBirthDate || editingOwnBirthDate;
 
     useEffect(() => {
         if (!isAuthenticated) {
@@ -103,14 +90,10 @@ export default function GuestManager({
             return;
         }
         fetchMyGuests();
-        // Fetch the reporter's own SSN from the server. This is the
-        // client-side equivalent of the old SSR-rendered `reporterSsn`
-        // prop — the decrypted personnummer is now only ever in browser
-        // memory, never in the SSR HTML payload.
-        fetch("/api/profiles/me/ssn", { credentials: "same-origin" })
-            .then((r) => (r.ok ? r.json() : { ssn: null }))
-            .then((d) => setOwnSsn(d?.ssn ?? null))
-            .catch(() => setOwnSsn(null));
+        fetch("/api/profiles/me/birth-date", { credentials: "same-origin" })
+            .then((r) => (r.ok ? r.json() : { birthDate: null }))
+            .then((d) => setOwnBirthDate(d?.birthDate ?? null))
+            .catch(() => setOwnBirthDate(null));
     }, [eventId, isAuthenticated]);
 
     useEffect(() => {
@@ -165,25 +148,26 @@ export default function GuestManager({
             setAllGuests(data.guests ?? data);
         } catch (err) {
             const errMsg = err instanceof Error ? err.message : String(err);
+
             setError(
                 errMsg || t["guest.failedToLoad"] || "Failed to load guests",
             );
         }
     }
 
-    async function handleSaveOwnSsn(e: Event) {
+    async function handleSaveOwnBirthDate(e: Event) {
         e.preventDefault();
-        const value = ownSsnInput.trim();
+        const value = ownBirthDateInput.trim();
         if (!value) return;
 
-        setOwnSsnError("");
-        setSavingOwnSsn(true);
+        setOwnBirthDateError("");
+        setSavingOwnBirthDate(true);
         try {
-            const res = await fetch("/api/profiles/me/ssn", {
+            const res = await fetch("/api/profiles/me/birth-date", {
                 method: "PUT",
                 headers: { "Content-Type": "application/json" },
                 credentials: "same-origin",
-                body: JSON.stringify({ ssn: value }),
+                body: JSON.stringify({ birthDate: value }),
             });
             const data = await res.json();
             if (!res.ok) {
@@ -191,25 +175,27 @@ export default function GuestManager({
                     data.error ||
                         data.message ||
                         t["guest.ownSsnFailed"] ||
-                        "Failed to save your SSN",
+                        "Failed to save your date of birth",
                 );
             }
-            setOwnSsn(data.ssn);
-            setOwnSsnInput("");
-            setEditingOwnSsn(false);
+            setOwnBirthDate(data.birthDate);
+            setOwnBirthDateInput("");
+            setEditingOwnBirthDate(false);
         } catch (err) {
             const errMsg = err instanceof Error ? err.message : String(err);
-            setOwnSsnError(
-                errMsg || t["guest.ownSsnFailed"] || "Failed to save your SSN",
+            setOwnBirthDateError(
+                errMsg ||
+                    t["guest.ownSsnFailed"] ||
+                    "Failed to save your date of birth",
             );
         } finally {
-            setSavingOwnSsn(false);
+            setSavingOwnBirthDate(false);
         }
     }
 
     async function handleAddGuest(e: Event) {
         e.preventDefault();
-        if (!isVerified || !ownSsn) return;
+        if (!isVerified || !ownBirthDate) return;
 
         setError("");
         setSuccessMessage("");
@@ -220,7 +206,7 @@ export default function GuestManager({
                 eventId,
                 guestName: form.guestName,
                 guestEmail: form.guestEmail || undefined,
-                guestSsn: form.guestSsn,
+                guestBirthDate: form.guestBirthDate,
             };
             if (adminOverride && isAdmin) {
                 body.adminOverride = true;
@@ -244,7 +230,7 @@ export default function GuestManager({
                 );
             }
 
-            setForm({ guestName: "", guestEmail: "", guestSsn: "" });
+            setForm({ guestName: "", guestEmail: "", guestBirthDate: "" });
             setSuccessMessage(
                 t["guest.guestAdded"] || "Guest added successfully!",
             );
@@ -420,10 +406,10 @@ export default function GuestManager({
                                         {t["guest.addAGuest"] || "Add a Guest"}
                                     </h4>
 
-                                    {/* Own SSN — asked once, then collapsed to a
-                                        one-line strip so the form stays three
-                                        fields wide forever after. */}
-                                    {needsOwnSsn ? (
+                                    {/* Own DOB — asked once, then collapsed to
+                                        a one-line strip so the form stays
+                                        three fields wide forever after. */}
+                                    {needsOwnBirthDate ? (
                                         <div class="rounded-md border border-amber-300 dark:border-amber-700/60 bg-amber-50 dark:bg-amber-900/20 p-3 space-y-2">
                                             <div class="flex items-start gap-2">
                                                 <svg
@@ -444,71 +430,74 @@ export default function GuestManager({
                                                         {t[
                                                             "guest.ownSsnTitle"
                                                         ] ||
-                                                            "We need your personnummer once"}
+                                                            "Your date of birth"}
                                                     </p>
                                                     <p class="text-xs text-amber-800/80 dark:text-amber-200/70">
                                                         {t[
                                                             "guest.ownSsnExplain"
                                                         ] ||
-                                                            "It is stored encrypted on your account and shown to event responsibles next to the guests you add."}
+                                                            "Used to verify your drinking age at events."}
                                                     </p>
                                                 </div>
                                             </div>
                                             <div class="flex flex-wrap items-center gap-2">
                                                 <input
-                                                    id="ownSsn"
-                                                    type="text"
-                                                    value={ownSsnInput}
+                                                    id="ownBirthDate"
+                                                    type="date"
+                                                    value={ownBirthDateInput}
                                                     onInput={(e) =>
-                                                        setOwnSsnInput(
+                                                        setOwnBirthDateInput(
                                                             (
                                                                 e.target as HTMLInputElement
                                                             ).value,
                                                         )
                                                     }
                                                     class="flex-1 min-w-[12rem] rounded-md border border-amber-300 dark:border-amber-700 bg-white dark:bg-gray-700 px-3 py-2 text-sm focus:ring-2 focus:ring-amber-500 focus:border-amber-500"
-                                                    placeholder={
-                                                        t[
-                                                            "guest.ssnPlaceholder"
-                                                        ] || "YYYYMMDD-XXXX"
-                                                    }
                                                 />
                                                 <button
                                                     type="button"
-                                                    onClick={handleSaveOwnSsn}
+                                                    onClick={
+                                                        handleSaveOwnBirthDate
+                                                    }
                                                     disabled={
-                                                        savingOwnSsn ||
-                                                        !ownSsnInput.trim()
+                                                        savingOwnBirthDate ||
+                                                        !ownBirthDateInput.trim()
                                                     }
                                                     class="px-4 py-2 rounded-lg bg-amber-600 text-white text-sm font-medium hover:bg-amber-700 transition-colors disabled:opacity-50"
                                                 >
-                                                    {savingOwnSsn
+                                                    {savingOwnBirthDate
                                                         ? t["common.saving"] ||
                                                           "Saving..."
                                                         : t[
                                                               "guest.ownSsnSave"
                                                           ] || "Save"}
                                                 </button>
-                                                {editingOwnSsn && ownSsn && (
-                                                    <button
-                                                        type="button"
-                                                        onClick={() => {
-                                                            setEditingOwnSsn(
-                                                                false,
-                                                            );
-                                                            setOwnSsnError("");
-                                                            setOwnSsnInput("");
-                                                        }}
-                                                        class="px-3 py-2 rounded-lg text-sm text-amber-900 dark:text-amber-200 hover:bg-amber-100 dark:hover:bg-amber-900/40 transition-colors"
-                                                    >
-                                                        {t["common.cancel"] ||
-                                                            "Cancel"}
-                                                    </button>
-                                                )}
+                                                {editingOwnBirthDate &&
+                                                    ownBirthDate && (
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => {
+                                                                setEditingOwnBirthDate(
+                                                                    false,
+                                                                );
+                                                                setOwnBirthDateError(
+                                                                    "",
+                                                                );
+                                                                setOwnBirthDateInput(
+                                                                    "",
+                                                                );
+                                                            }}
+                                                            class="px-3 py-2 rounded-lg text-sm text-amber-900 dark:text-amber-200 hover:bg-amber-100 dark:hover:bg-amber-900/40 transition-colors"
+                                                        >
+                                                            {t[
+                                                                "common.cancel"
+                                                            ] || "Cancel"}
+                                                        </button>
+                                                    )}
                                             </div>
-                                            {ownSsnError && (
+                                            {ownBirthDateError && (
                                                 <p class="text-xs text-red-600 dark:text-red-400">
-                                                    {ownSsnError}
+                                                    {ownBirthDateError}
                                                 </p>
                                             )}
                                         </div>
@@ -520,17 +509,18 @@ export default function GuestManager({
                                                 {reporterDisplayName}
                                             </span>{" "}
                                             ·{" "}
-                                            <SsnValue
-                                                value={ownSsn as string}
-                                                muted
+                                            <DobValue
+                                                value={ownBirthDate as string}
                                             />{" "}
                                             ·{" "}
                                             <button
                                                 type="button"
                                                 onClick={() => {
-                                                    setEditingOwnSsn(true);
-                                                    setOwnSsnInput(
-                                                        ownSsn as string,
+                                                    setEditingOwnBirthDate(
+                                                        true,
+                                                    );
+                                                    setOwnBirthDateInput(
+                                                        ownBirthDate as string,
                                                     );
                                                 }}
                                                 class="text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 underline"
@@ -601,66 +591,37 @@ export default function GuestManager({
                                         </div>
                                         <div>
                                             <label
-                                                for="guestSsn"
+                                                for="guestBirthDate"
                                                 class="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1"
                                             >
-                                                {t["guest.ssn"] || "SSN"} *
+                                                {t["guest.ssn"] ||
+                                                    "Date of birth"}{" "}
+                                                *
                                             </label>
                                             <input
-                                                id="guestSsn"
-                                                type="text"
+                                                id="guestBirthDate"
+                                                type="date"
                                                 required
-                                                value={form.guestSsn}
+                                                value={form.guestBirthDate}
                                                 onInput={(e) =>
                                                     updateForm(
-                                                        "guestSsn",
+                                                        "guestBirthDate",
                                                         (
                                                             e.target as HTMLInputElement
                                                         ).value,
                                                     )
                                                 }
                                                 class="w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                                                placeholder={
-                                                    t["guest.ssnPlaceholder"] ||
-                                                    "YYYYMMDD-XXXX"
-                                                }
                                             />
-                                            {/* Free text is allowed for guests
-                                                without a personnummer, so say
-                                                which one we recognised rather
-                                                than flagging an error. */}
-                                            {form.guestSsn.trim() !== "" &&
-                                                (isPersonnummer(
-                                                    form.guestSsn,
-                                                ) ? (
-                                                    <p class="mt-1 text-xs text-green-600 dark:text-green-400">
-                                                        ✓{" "}
-                                                        {t[
-                                                            "guest.ssnValidPersonnummer"
-                                                        ] ||
-                                                            "Valid personnummer"}
-                                                        {" · "}
-                                                        {
-                                                            parseSsn(
-                                                                form.guestSsn,
-                                                            ).display
-                                                        }
-                                                    </p>
-                                                ) : (
-                                                    <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                                                        {t[
-                                                            "guest.ssnFreeText"
-                                                        ] ||
-                                                            "Not a Swedish personnummer — saved as free text."}
-                                                    </p>
-                                                ))}
                                         </div>
                                     </div>
 
                                     <div class="flex items-center gap-3">
                                         <button
                                             type="submit"
-                                            disabled={submitting || !ownSsn}
+                                            disabled={
+                                                submitting || !ownBirthDate
+                                            }
                                             class="px-4 py-2 rounded-lg bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 transition-colors disabled:opacity-50"
                                         >
                                             {submitting
@@ -669,10 +630,10 @@ export default function GuestManager({
                                                 : t["guest.addGuest"] ||
                                                   "Add Guest"}
                                         </button>
-                                        {!ownSsn && (
+                                        {!ownBirthDate && (
                                             <span class="text-xs text-gray-500 dark:text-gray-400">
                                                 {t["guest.ownSsnRequired"] ||
-                                                    "Register your own SSN above first."}
+                                                    "Register your date of birth above first."}
                                             </span>
                                         )}
                                     </div>
@@ -704,11 +665,14 @@ export default function GuestManager({
                                                             {guest.guestEmail}
                                                         </span>
                                                     )}
-                                                    {guest.guestSsn && (
+                                                    {guest.guestBirthDate && (
                                                         <span>
                                                             {t["guest.ssn"] ||
-                                                                "SSN"}
-                                                            : {guest.guestSsn}
+                                                                "Date of birth"}
+                                                            :{" "}
+                                                            {
+                                                                guest.guestBirthDate
+                                                            }
                                                         </span>
                                                     )}
                                                 </div>
@@ -789,18 +753,19 @@ export default function GuestManager({
                                                 key={guest.id}
                                                 class="hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors align-top"
                                             >
-                                                {/* Guest identity: name over SSN
-                                                    over email, so the door staff
-                                                    reads one block per person. */}
+                                                {/* Guest identity: name over
+                                                    birth-date over email, so
+                                                    the door staff reads one
+                                                    block per person. */}
                                                 <td class="px-4 py-2.5">
                                                     <div class="font-medium text-gray-900 dark:text-white whitespace-nowrap">
                                                         {guest.guestName}
                                                     </div>
                                                     <div class="whitespace-nowrap">
-                                                        {guest.guestSsn ? (
-                                                            <SsnValue
+                                                        {guest.guestBirthDate ? (
+                                                            <DobValue
                                                                 value={
-                                                                    guest.guestSsn
+                                                                    guest.guestBirthDate
                                                                 }
                                                             />
                                                         ) : (
@@ -808,7 +773,7 @@ export default function GuestManager({
                                                                 {t[
                                                                     "guest.noSwedishSsn"
                                                                 ] ||
-                                                                    "No SSN on file"}
+                                                                    "No date of birth on file"}
                                                             </span>
                                                         )}
                                                     </div>
@@ -830,22 +795,6 @@ export default function GuestManager({
                                                                 guest.reporterNickname ||
                                                                 "-"}
                                                         </a>
-                                                    </div>
-                                                    <div class="whitespace-nowrap">
-                                                        {guest.reporterSsn ? (
-                                                            <SsnValue
-                                                                value={
-                                                                    guest.reporterSsn
-                                                                }
-                                                            />
-                                                        ) : (
-                                                            <span class="text-xs text-gray-400 dark:text-gray-500">
-                                                                {t[
-                                                                    "guest.noSwedishSsn"
-                                                                ] ||
-                                                                    "No SSN on file"}
-                                                            </span>
-                                                        )}
                                                     </div>
                                                 </td>
                                                 <td class="px-4 py-2.5 text-gray-500 dark:text-gray-400 whitespace-nowrap">

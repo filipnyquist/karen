@@ -58,24 +58,25 @@ test.describe("Event page PII leaks", () => {
         await ctx.close();
     });
 
-    test("P0-2: logged-in user's decrypted SSN must NOT ship in event page HTML", async ({
+    test("P0-2 (resolved): logged-in user's date of birth must NOT ship in event page HTML", async ({
         browser,
     }) => {
         const ctx = await browser.newContext();
         const page = await ctx.newPage();
         await login(page, "alice");
 
-        // Claim a deterministic SSN.
-        const SSN = "20000101-0000";
-        await page.request.put("/api/profiles/me/ssn", { data: { ssn: SSN } });
+        // Set a deterministic DOB.
+        await page.request.put("/api/profiles/me/birth-date", {
+            data: { birthDate: "2000-01-01" },
+        });
 
-        // Re-read alice's actual SSN (parallel tests may have raced).
+        // Re-read alice's actual DOB (parallel tests may have raced).
         const me = await page.request.get("/api/profiles/me");
-        const meBody = (await me.json()) as { ssn: string | null };
-        const actualSsn = meBody.ssn;
+        const meBody = (await me.json()) as { birthDate: string | null };
+        const actualDob = meBody.birthDate;
         expect(
-            actualSsn,
-            "alice must have an SSN on file for this test to be meaningful",
+            actualDob,
+            "alice must have a date of birth on file for this test to be meaningful",
         ).toBeTruthy();
 
         const eventId = await findEventId(page, "Midsommarpub");
@@ -83,17 +84,16 @@ test.describe("Event page PII leaks", () => {
 
         // Read the SSR HTML directly via request.get — this bypasses
         // hydration, so the page is what the server actually rendered.
-        // `page.content()` would include client-side state after the
-        // useEffect fetch resolves.
         const res = await page.request.get(`/event/${eventId}`);
         const html = await res.text();
 
-        // Regression guard: the SSN used to ship in the SSR HTML.
-        // After the fix, the SSR HTML must NOT contain the plaintext SSN;
-        // <GuestManager> now fetches it client-side from /api/profiles/me/ssn.
+        // Regression guard: same shape as the old SSN test — even
+        // though DOB is plaintext, we don't want it shipping in HTML by
+        // default; <GuestManager> fetches it client-side from
+        // /api/profiles/me/birth-date.
         expect(
-            actualSsn !== null && html.includes(actualSsn),
-            "BUG: alice's decrypted SSN still ships in event-page SSR HTML",
+            actualDob !== null && html.includes(actualDob),
+            "BUG: alice's date of birth still ships in event-page SSR HTML",
         ).toBe(false);
 
         await ctx.close();

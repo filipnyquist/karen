@@ -14,7 +14,7 @@ Built with **Astro**, **Elysia**, **Drizzle ORM**, **Preact**, and **Bun**.
 
 ```bash
 bun install
-cp .env.example .env             # fill in ENCRYPTION_KEY, ADMIN_PASSWORD, SUPERADMIN_PASSWORD
+cp .env.example .env             # fill in ADMIN_PASSWORD, SUPERADMIN_PASSWORD
 docker compose -f docker-compose.dev.yml up --build
 ```
 
@@ -45,7 +45,7 @@ src/
 ├── styles/                       # Global CSS
 ├── utils/
 └── middleware.ts                 # Astro middleware — auth + locale + security headers
-scripts/                          # One-off scripts (SSN encryption migration)
+
 e2e/                              # Playwright E2E specs
 docker-compose.yml                # Production stack (app + db + migrate + Traefik labels)
 docker-compose.dev.yml            # Dev stack (app + db + migrate, hot-reload mounts)
@@ -81,7 +81,7 @@ docker compose rm -f legacy-db legacy-import
 ### Gotchas
 
 - `docker compose --profile import down` is a foot-gun: compose's `down` ignores profile filters and tears down the **entire** project (app, db, network). Always use `stop` + `rm` on the two specific services.
-- The importer reads `ENCRYPTION_KEY` from `.env` (via `env_file`) — guest SSNs in the dump get encrypted on the way into Postgres.
+- The importer writes guest birth dates verbatim from the legacy dump — no encryption or redaction.
 - A successful import from the prod dump typically yields ~1.5k placeholder users, ~1k events, ~7.5k worker registrations, ~2.5k guest registrations, ~1k tickets, ~1k reports. The `legacy_mappings` table records the old MySQL primary key for every imported row.
 
 ## Environment Variables
@@ -92,7 +92,6 @@ All vars live in `.env` (gitignored). See `.env.example` for a template.
 |---|---|---|---|
 | `DATABASE_URL` | Yes | — | PostgreSQL connection string |
 | `BASE_URL` | Yes (prod) | `http://localhost:4321` | App base URL; in production must point at the public origin (used in email links) |
-| `ENCRYPTION_KEY` | Yes | — | 64-char hex key for SSN encryption. Generate with `openssl rand -hex 32`. Rotating this key invalidates all existing encrypted SSNs. |
 | `ADMIN_PASSWORD` | Yes | — | Password for the seeded `admin@karen.se` user (consumed by `bun run db:seed`) |
 | `SUPERADMIN_PASSWORD` | Yes | — | Same, for `superadmin@karen.se` |
 | `SESSION_SECRET` | Yes (prod) | — | Used to derive session cookie keys |
@@ -116,7 +115,7 @@ All vars live in `.env` (gitignored). See `.env.example` for a template.
 - **CAPTCHA**: Cloudflare Turnstile on login/register (required when `TURNSTILE_SECRET` is set).
 - **Rate limiting**: 5 login attempts per IP per 15 minutes.
 - **Account lockout**: Progressive 15-minute lockout after 5 failed attempts (per email+IP).
-- **SSN encryption**: Guest personnummer are encrypted at rest with AES-256-GCM. Only responsibles and admins can decrypt. HMAC-based hash column for fast duplicate detection.
+- **Date-of-birth storage**: Plaintext YYYY-MM-DD, used for the legal-drinking-age check at events. No encryption, no SSN, no PII beyond what the door staff needs.
 - **Security headers**: HSTS, X-Frame-Options (DENY), X-Content-Type-Options (nosniff), Referrer-Policy, Permissions-Policy.
 - **XSS prevention**: No `innerHTML` usage in source code. Profile pictures set via server-controlled upload endpoint only.
 - **File uploads**: Extension whitelist (jpg/jpeg/png/gif/webp), 5 MB size limit, `path.basename()` against traversal.
@@ -236,16 +235,6 @@ docker compose up migrate
 
 Pending migrations are applied; the app container picks up schema changes on restart.
 
-**Encrypting existing plaintext SSNs** (one-time, for upgrades from a pre-encryption version):
-
-```bash
-# 1. Set ENCRYPTION_KEY in .env
-# 2. Run the migration that adds the guest_ssn_hash column
-docker compose up migrate
-# 3. Encrypt the existing plaintext SSNs
-docker compose exec app bun scripts/encrypt-ssns.ts
-```
-
 `docker-compose.import.yml` was folded into `docker-compose.yml` and `docker-compose.dev.yml` behind the `import` profile. See the [Legacy Import](#legacy-import) section above for the current workflow.
 
 ## Scripts
@@ -259,7 +248,6 @@ docker compose exec app bun scripts/encrypt-ssns.ts
 | `bun run db:generate` | Generate Drizzle migration from schema |
 | `bun run db:migrate` | Apply pending migrations |
 | `bun run db:seed` | Seed production data |
-| `bun scripts/encrypt-ssns.ts` | Encrypt existing plaintext SSNs (one-time) |
 | `bun run test:e2e` | Run E2E tests (self-contained) |
 | `bun run test:e2e:ui` | Same, with Playwright UI |
 | `bun run test:e2e:debug` | Same, with step-through debugger |

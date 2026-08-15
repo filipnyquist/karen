@@ -22,7 +22,6 @@ services:
       - DEFAULT_MAX_GUESTS_PER_USER=${DEFAULT_MAX_GUESTS_PER_USER:-3}
       - TURNSTILE_SITEKEY=${TURNSTILE_SITEKEY:-}
       - TURNSTILE_SECRET=${TURNSTILE_SECRET:-}
-      - ENCRYPTION_KEY=${ENCRYPTION_KEY:-}
       - UPLOAD_DIR=/app/uploads
     volumes:
       - uploads:/app/uploads
@@ -92,8 +91,8 @@ services:
   # Credentials mirror the prod db (karen:karen) so the importer can resolve
   # `db:5432` on karen-net. DATABASE_SSL=disable is required because the
   # release image bakes in NODE_ENV=production and the postgres driver
-  # defaults to SSL=require in production. ENCRYPTION_KEY comes from .env
-  # via env_file (the image excludes .env via .dockerignore).
+  # defaults to SSL=require in production. env_file passes .env values
+  # for non-secret config (the image excludes .env via .dockerignore).
   # ---------------------------------------------------------------------------
   legacy-db:
     image: mariadb:11

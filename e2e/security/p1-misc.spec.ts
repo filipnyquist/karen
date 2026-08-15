@@ -17,9 +17,9 @@ import { csrfFetch } from "./_helper";
  *  - P1-4: POST /api/auth/request-verify lets the caller specify the
  *    recipient email (body.email is sent, not user.email) — email-bomb
  *    surface (src/api/routes/auth.ts:159-172).
- *  - P1-6: POST /api/tickets/scan returns the full users row (including
- *    encrypted SSN) to any worker on the same event during the scan
- *    window (src/api/routes/tickets.ts:54-91).
+ *  - P1-6 (resolved): scanTicket's projection already excludes email /
+ *    role. The original SSN-in-scan finding is moot since the SSN
+ *    storage is gone; the test still asserts no role/email leak.
  */
 
 test.describe("P1 auth / PII surface findings", () => {

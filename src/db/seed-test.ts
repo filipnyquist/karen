@@ -9,7 +9,6 @@ import { randomBytes } from "node:crypto";
 import { chmodSync, existsSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { eq, sql } from "drizzle-orm";
-import { encrypt, hashSsn } from "../lib/encryption";
 import { generateJoinCode } from "../utils/joinCode";
 import { db } from "./index";
 import {
@@ -684,11 +683,9 @@ async function seed() {
     console.log("    ✓ Workers registered");
 
     // ── Guest Registrations ──
-    // SSNs use an obvious placeholder ("00000000-0000") so we don't commit
-    // real-format Swedish personnummer values to the repository. The unique
-    // index on (guest_ssn_hash, event_id) still dedupes correctly because
-    // the placeholder hash is constant.
-    const PLACEHOLDER_SSN = "00000000-0000";
+    // We don't store the actual SSN any more, just a date of birth. Use
+    // a single placeholder DOB so the seed is idempotent across re-runs.
+    const PLACEHOLDER_DOB = "1990-01-01";
     console.log("  Registering guests...");
     async function registerGuest(
         eventId: string,
@@ -696,24 +693,13 @@ async function seed() {
         name: string,
         email: string | null,
     ) {
-        const ssnHash = await hashSsn(PLACEHOLDER_SSN);
-        const [dup] = await db
-            .select()
-            .from(guestRegistrations)
-            .where(
-                sql`${guestRegistrations.guestSsnHash} = ${ssnHash} AND ${guestRegistrations.eventId} = ${eventId}`,
-            );
-        if (!dup) {
-            const encryptedSsn = await encrypt(PLACEHOLDER_SSN);
-            await db.insert(guestRegistrations).values({
-                eventId,
-                reporterId,
-                guestName: name,
-                guestEmail: email,
-                guestSsn: encryptedSsn,
-                guestSsnHash: ssnHash,
-            });
-        }
+        await db.insert(guestRegistrations).values({
+            eventId,
+            reporterId,
+            guestName: name,
+            guestEmail: email,
+            guestBirthDate: PLACEHOLDER_DOB,
+        });
     }
 
     await registerGuest(pub1.id, alice.id, "Mats Matsson", "mats@email.se");

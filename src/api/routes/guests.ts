@@ -9,16 +9,17 @@ import {
     users,
     workerRegistrations,
 } from "../../db/schema";
-import { decrypt, encrypt, hashSsn } from "../../lib/encryption";
-import { parseSsn } from "../../lib/ssn";
 import {
     getEventById,
     getGuestCountForEvent,
     getGuestCountForUser,
 } from "../../services/events";
+import { parseDob } from "../../utils/dob";
 import type { AuthUser } from "../middleware/auth";
 import { authDerive, isAdmin, verifiedDerive } from "../middleware/auth";
 import { AppError } from "../middleware/error";
+
+const DOB_PATTERN = "^\\d{4}-\\d{2}-\\d{2}$";
 
 async function canSeeAllGuests(
     user: AuthUser,
@@ -80,48 +81,34 @@ export const guestRoutes = new Elysia()
                     }
                 }
 
-                // The submitter vouches for the guest with their own
-                // personnummer, so it must be on file before they can add
-                // anyone. The island disables the button for this case; this
-                // is the server-side twin of that guard.
+                // The submitter must have set their own date of birth
+                // before they can add anyone. The island disables the
+                // button for this case; this is the server-side twin.
                 const [reporter] = await db
-                    .select({ ssn: users.ssn })
+                    .select({ birthDate: users.birthDate })
                     .from(users)
                     .where(eq(users.id, user.id))
                     .limit(1);
-                if (!reporter?.ssn) {
+                if (!reporter?.birthDate) {
                     throw new AppError(
-                        "You must register your own SSN before adding guests",
+                        "You must register your own date of birth before adding guests",
                         409,
-                        "REPORTER_SSN_REQUIRED",
+                        "REPORTER_BIRTH_DATE_REQUIRED",
                     );
                 }
 
-                // Normalize before hashing so the same person entered as
-                // "900101-1239" and "19900101-1239" collides on the
-                // guest_ssn_event_unique index instead of slipping through.
-                const parsedSsn = parseSsn(body.guestSsn);
-                const ssnHash = await hashSsn(parsedSsn.normalized);
-
-                const existingSsn = await db
-                    .select()
-                    .from(guestRegistrations)
-                    .where(
-                        and(
-                            eq(guestRegistrations.guestSsnHash, ssnHash),
-                            eq(guestRegistrations.eventId, body.eventId),
-                        ),
-                    )
-                    .limit(1);
-
-                if (existingSsn.length > 0) {
+                const parsedDob = parseDob(body.guestBirthDate);
+                if (parsedDob === null) {
                     throw new AppError(
-                        "A guest with this SSN is already registered for this event",
-                        409,
-                        "GUEST_SSN_EXISTS",
+                        "Invalid date of birth",
+                        400,
+                        "INVALID_DOB",
                     );
                 }
 
+                // No dedup probe — DOB is not unique per person, so
+                // duplicates are accepted at the DB level. The UI can
+                // warn on identical name+email+birthDate if needed.
                 const [registration] = await db
                     .insert(guestRegistrations)
                     .values({
@@ -129,8 +116,7 @@ export const guestRoutes = new Elysia()
                         reporterId: user.id,
                         guestName: body.guestName,
                         guestEmail: body.guestEmail ?? null,
-                        guestSsn: await encrypt(parsedSsn.display),
-                        guestSsnHash: ssnHash,
+                        guestBirthDate: parsedDob,
                     })
                     .returning();
 
@@ -141,7 +127,7 @@ export const guestRoutes = new Elysia()
                     eventId: t.String(),
                     guestName: t.String({ minLength: 1 }),
                     guestEmail: t.Optional(t.String()),
-                    guestSsn: t.String({ minLength: 1 }),
+                    guestBirthDate: t.String({ pattern: DOB_PATTERN }),
                     adminOverride: t.Optional(t.Boolean()),
                 }),
             },
@@ -166,7 +152,7 @@ export const guestRoutes = new Elysia()
                     );
                 return result.map((g) => ({
                     ...g,
-                    guestSsn: g.guestSsn ? "••••••" : null,
+                    guestBirthDate: g.guestBirthDate ?? null,
                 }));
             })
             .get("/event/:eventId/all", async ({ params, user }) => {
@@ -188,12 +174,10 @@ export const guestRoutes = new Elysia()
                         reporterId: guestRegistrations.reporterId,
                         guestName: guestRegistrations.guestName,
                         guestEmail: guestRegistrations.guestEmail,
-                        guestSsn: guestRegistrations.guestSsn,
-                        guestSsnHash: guestRegistrations.guestSsnHash,
+                        guestBirthDate: guestRegistrations.guestBirthDate,
                         createdAt: guestRegistrations.createdAt,
                         reporterName: users.name,
                         reporterNickname: users.nickname,
-                        reporterSsn: users.ssn,
                     })
                     .from(guestRegistrations)
                     .innerJoin(
@@ -201,15 +185,7 @@ export const guestRoutes = new Elysia()
                         eq(users.id, guestRegistrations.reporterId),
                     )
                     .where(eq(guestRegistrations.eventId, params.eventId));
-                return Promise.all(
-                    rows.map(async (g) => ({
-                        ...g,
-                        guestSsn: g.guestSsn ? await decrypt(g.guestSsn) : null,
-                        reporterSsn: g.reporterSsn
-                            ? await decrypt(g.reporterSsn)
-                            : null,
-                    })),
-                );
+                return rows;
             })
             .get("/event/:eventId", async ({ params, user }) => {
                 await getEventById(params.eventId);
@@ -217,21 +193,13 @@ export const guestRoutes = new Elysia()
                 const showAll = await canSeeAllGuests(user, params.eventId);
 
                 if (showAll) {
-                    const result = await db
+                    return db
                         .select()
                         .from(guestRegistrations)
                         .where(eq(guestRegistrations.eventId, params.eventId));
-                    return Promise.all(
-                        result.map(async (g) => ({
-                            ...g,
-                            guestSsn: g.guestSsn
-                                ? await decrypt(g.guestSsn)
-                                : null,
-                        })),
-                    );
                 }
 
-                const result = await db
+                return db
                     .select()
                     .from(guestRegistrations)
                     .where(
@@ -240,10 +208,6 @@ export const guestRoutes = new Elysia()
                             eq(guestRegistrations.reporterId, user.id),
                         ),
                     );
-                return result.map((g) => ({
-                    ...g,
-                    guestSsn: g.guestSsn ? "••••••" : null,
-                }));
             })
             .delete("/:id", async ({ params, user }) => {
                 const result = await db
