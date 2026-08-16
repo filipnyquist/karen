@@ -157,8 +157,8 @@ const isMrMime = profileUser.nickname?.trim() === 'Mr.Mime';
           <div class="flex items-center gap-3">
             <h1 class="text-2xl font-bold text-gray-900 dark:text-white">
               {isMrMime ? (
-                profileUser.nickname!.split('').map((char, i) => (
-                  <span class="mr-mime-letter" style={`--i:${i}`}>{char}</span>
+                profileUser.nickname!.split('').map((char) => (
+                  <span class="mr-mime-letter">{char}</span>
                 ))
               ) : (
                 profileUser.nickname || anonymizeName(profileUser.name, isAuth) || t('profile.anonymous')
@@ -341,13 +341,24 @@ const isMrMime = profileUser.nickname?.trim() === 'Mr.Mime';
 <style>
   .mr-mime-letter {
     display: inline-block;
-    animation: mr-mime-float 2.4s ease-in-out infinite;
-    animation-delay: calc(var(--i) * 80ms);
+    animation: mr-mime-float 1.8s ease-in-out infinite;
     will-change: transform;
   }
+  /* Per-letter stagger via nth-child — keeps us off inline `style=""`
+     attributes (the project's CSP blocks those without 'unsafe-hashes'). */
+  .mr-mime-letter:nth-child(1)  { animation-delay:   0ms; }
+  .mr-mime-letter:nth-child(2)  { animation-delay: 100ms; }
+  .mr-mime-letter:nth-child(3)  { animation-delay: 200ms; }
+  .mr-mime-letter:nth-child(4)  { animation-delay: 300ms; }
+  .mr-mime-letter:nth-child(5)  { animation-delay: 400ms; }
+  .mr-mime-letter:nth-child(6)  { animation-delay: 500ms; }
+  .mr-mime-letter:nth-child(7)  { animation-delay: 600ms; }
+  .mr-mime-letter:nth-child(8)  { animation-delay: 700ms; }
+  .mr-mime-letter:nth-child(9)  { animation-delay: 800ms; }
+  .mr-mime-letter:nth-child(n+10) { animation-delay: 900ms; }
   @keyframes mr-mime-float {
-    0%, 100% { transform: translateY(0); }
-    50%     { transform: translateY(-6px); }
+    0%, 100% { transform: translateY(0) scale(1); }
+    50%     { transform: translateY(-10px) scale(1.06); }
   }
   @media (prefers-reduced-motion: reduce) {
     .mr-mime-letter {
