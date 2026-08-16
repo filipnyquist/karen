@@ -1,0 +1,194 @@
+---
+// src/components/NavBar.astro
+import LanguageSwitcher from './LanguageSwitcher.astro';
+import { isAdmin } from '../api/middleware/auth';
+
+interface Props {
+  user: any;
+  lang: string;
+  t: (key: string) => string;
+  currentPath: string;
+}
+
+const { user, lang, t, currentPath } = Astro.props;
+---
+
+<header class="bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-800 sticky top-0 z-50">
+  <nav class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+    <div class="flex items-center justify-between h-16">
+      <!-- Logo -->
+      <a href="/" class="flex items-center gap-2 text-xl font-bold text-gray-900 dark:text-white shrink-0">
+        {t('site.title')}
+      </a>
+
+      <!-- Mobile menu button -->
+      <button
+        id="mobile-menu-btn"
+        class="sm:hidden inline-flex items-center justify-center p-2 rounded-md text-gray-500 hover:text-gray-900 hover:bg-gray-100 dark:text-gray-400 dark:hover:text-white dark:hover:bg-gray-800"
+        aria-label="Toggle menu"
+      >
+        <svg class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16" />
+        </svg>
+      </button>
+
+      <!-- Desktop navigation -->
+      <div class="hidden sm:flex sm:items-center sm:gap-1">
+        <a href="/"
+           class:list={[
+             'px-3 py-2 rounded-md text-sm font-medium transition-colors',
+             currentPath === '/' ? 'bg-gray-100 dark:bg-gray-800 text-gray-900 dark:text-white' : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50 dark:text-gray-300 dark:hover:text-white dark:hover:bg-gray-800',
+           ]}>
+          {t('nav.home')}
+        </a>
+        <a href="/event/list"
+           class:list={[
+             'px-3 py-2 rounded-md text-sm font-medium transition-colors',
+             currentPath.startsWith('/event') ? 'bg-gray-100 dark:bg-gray-800 text-gray-900 dark:text-white' : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50 dark:text-gray-300 dark:hover:text-white dark:hover:bg-gray-800',
+           ]}>
+          {t('nav.events')}
+        </a>
+        <a href="/scoreboard"
+           class:list={[
+             'px-3 py-2 rounded-md text-sm font-medium transition-colors',
+             currentPath === '/scoreboard' ? 'bg-gray-100 dark:bg-gray-800 text-gray-900 dark:text-white' : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50 dark:text-gray-300 dark:hover:text-white dark:hover:bg-gray-800',
+           ]}>
+          {t('nav.scoreboard')}
+        </a>
+        <a href="/pubteam/list"
+           class:list={[
+             'px-3 py-2 rounded-md text-sm font-medium transition-colors',
+             currentPath.startsWith('/pubteam') ? 'bg-gray-100 dark:bg-gray-800 text-gray-900 dark:text-white' : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50 dark:text-gray-300 dark:hover:text-white dark:hover:bg-gray-800',
+           ]}>
+          {t('nav.teams')}
+        </a>
+        {user && (
+          <a href="/tickets"
+             class:list={[
+               'px-3 py-2 rounded-md text-sm font-medium transition-colors',
+               currentPath === '/tickets' ? 'bg-gray-100 dark:bg-gray-800 text-gray-900 dark:text-white' : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50 dark:text-gray-300 dark:hover:text-white dark:hover:bg-gray-800',
+             ]}>
+            {t('nav.tickets')}
+          </a>
+        )}
+
+        {user && isAdmin(user.role) && (
+          <a href="/admin"
+             class:list={[
+               'px-3 py-2 rounded-md text-sm font-medium transition-colors',
+               currentPath.startsWith('/admin') ? 'bg-gray-100 dark:bg-gray-800 text-gray-900 dark:text-white' : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50 dark:text-gray-300 dark:hover:text-white dark:hover:bg-gray-800',
+             ]}>
+            {t('nav.admin')}
+          </a>
+        )}
+      </div>
+
+      <!-- Right side: lang switcher + auth -->
+      <div class="hidden sm:flex sm:items-center sm:gap-3">
+        <LanguageSwitcher lang={lang} />
+        {user ? (
+          <div class="flex items-center gap-3">
+            <a href={`/profile/${user.id}`}
+               class:list={[
+                 'px-3 py-2 rounded-md text-sm font-medium transition-colors',
+                 currentPath.startsWith('/profile') ? 'bg-gray-100 dark:bg-gray-800 text-gray-900 dark:text-white' : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50 dark:text-gray-300 dark:hover:text-white dark:hover:bg-gray-800',
+               ]}>
+              {user.nickname || user.name || user.email}
+            </a>
+            <a href="/migrate"
+               class:list={[
+                 'px-2 py-1 rounded-md text-xs font-medium transition-colors',
+                 currentPath === '/migrate' ? 'bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300' : 'text-gray-400 hover:text-gray-600 hover:bg-gray-50 dark:text-gray-500 dark:hover:text-gray-300 dark:hover:bg-gray-800',
+               ]}>
+              {t('nav.migrate')}
+            </a>
+            <button data-action="logout" class="text-sm text-gray-500 hover:text-red-600 dark:text-gray-400 dark:hover:text-red-400 transition-colors">
+              {t('nav.logout')}
+            </button>
+          </div>
+        ) : (
+          <div class="flex items-center gap-2">
+            <a href="/login" class="px-3 py-2 rounded-md text-sm font-medium text-gray-600 hover:text-gray-900 hover:bg-gray-50 dark:text-gray-300 dark:hover:text-white dark:hover:bg-gray-800 transition-colors">
+              {t('nav.login')}
+            </a>
+            <a href="/register" class="px-4 py-2 rounded-md text-sm font-medium bg-blue-600 text-white hover:bg-blue-700 transition-colors">
+              {t('nav.register')}
+            </a>
+          </div>
+        )}
+      </div>
+    </div>
+
+    <!-- Mobile menu -->
+    <div id="mobile-menu" class="hidden sm:hidden pb-4">
+      <div class="flex flex-col gap-1">
+        <a href="/" class="block px-3 py-2 rounded-md text-base font-medium text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800">
+          {t('nav.home')}
+        </a>
+        <a href="/event/list" class="block px-3 py-2 rounded-md text-base font-medium text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800">
+          {t('nav.events')}
+        </a>
+        <a href="/scoreboard" class="block px-3 py-2 rounded-md text-base font-medium text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800">
+          {t('nav.scoreboard')}
+        </a>
+        <a href="/pubteam/list" class="block px-3 py-2 rounded-md text-base font-medium text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800">
+          {t('nav.teams')}
+        </a>
+        {user && (
+          <a href="/tickets" class="block px-3 py-2 rounded-md text-base font-medium text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800">
+            {t('nav.tickets')}
+          </a>
+        )}
+        {user && isAdmin(user.role) && (
+          <a href="/admin" class="block px-3 py-2 rounded-md text-base font-medium text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800">
+            {t('nav.admin')}
+          </a>
+        )}
+
+        <div class="border-t border-gray-200 dark:border-gray-700 my-2"></div>
+        <div class="px-3 py-2">
+          <LanguageSwitcher lang={lang} />
+        </div>
+        <div class="border-t border-gray-200 dark:border-gray-700 my-2"></div>
+        {user ? (
+          <Fragment>
+            <a href={`/profile/${user.id}`} class="block px-3 py-2 rounded-md text-base font-medium text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800">
+              {t('nav.profile')}: {user.nickname || user.name || user.email}
+            </a>
+            <a href="/migrate" class="block px-3 py-2 rounded-md text-sm font-medium text-gray-500 hover:text-gray-700 hover:bg-gray-50 dark:text-gray-400 dark:hover:text-gray-200 dark:hover:bg-gray-800">
+              {t('nav.migrate')}
+            </a>
+            <button data-action="logout" class="block w-full text-left px-3 py-2 rounded-md text-base font-medium text-red-600 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-950">
+              {t('nav.logout')}
+            </button>
+          </Fragment>
+        ) : (
+          <Fragment>
+            <a href="/login" class="block px-3 py-2 rounded-md text-base font-medium text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800">
+              {t('nav.login')}
+            </a>
+            <a href="/register" class="block px-3 py-2 rounded-md text-base font-medium bg-blue-600 text-white hover:bg-blue-700 text-center">
+              {t('nav.register')}
+            </a>
+          </Fragment>
+        )}
+      </div>
+    </div>
+  </nav>
+</header>
+
+<script>
+  const btn = document.getElementById('mobile-menu-btn');
+  const menu = document.getElementById('mobile-menu');
+  btn?.addEventListener('click', () => {
+    menu?.classList.toggle('hidden');
+  });
+
+  // Logout buttons (mobile + desktop) carry data-action="logout".
+  document.body.addEventListener('click', (e) => {
+    const target = e.target instanceof Element ? e.target.closest('[data-action="logout"]') : null;
+    if (!target) return;
+    fetch('/api/auth/logout', { method: 'POST', credentials: 'same-origin' })
+      .then(() => { location.href = '/'; });
+  });
+</script>

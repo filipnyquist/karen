@@ -1,0 +1,77 @@
+---
+// src/pages/admin/education-types.astro
+//
+// Superadmin-only CRUD for education types (the lookup list for
+// user_educations). Endpoint shape mirrors locations:
+// /api/admin/reference-data/education-types (superadmin-gated).
+
+import BaseLayout from '../../layouts/BaseLayout.astro';
+import ReferenceDataTable from '../../islands/ReferenceDataTable';
+import { db } from '../../db';
+import { educationTypes } from '../../db/schema';
+import { requireSuperadmin } from '../../lib/guards';
+import { flattenTranslations } from '../../i18n/index';
+
+const t = Astro.locals.t;
+const guard = requireSuperadmin(Astro);
+if (guard instanceof Response) return guard;
+
+const rows = await db
+    .select({
+        id: educationTypes.id,
+        name: educationTypes.name,
+        description: educationTypes.description,
+        // Per-locale fields — must be selected here so the
+        // <ReferenceDataTable> island's `initialRows` carries them;
+        // the modal pre-fills Namn (sv/en) / Beskrivning (sv/en)
+        // from these. Missing → modal opens empty even when the row
+        // has the data set (the SSR select used to drop them).
+        nameSv: educationTypes.nameSv,
+        nameEn: educationTypes.nameEn,
+        descriptionSv: educationTypes.descriptionSv,
+        descriptionEn: educationTypes.descriptionEn,
+        validityMonths: educationTypes.validityMonths,
+    })
+    .from(educationTypes)
+    .orderBy(educationTypes.name);
+
+const translations = flattenTranslations(
+    Astro.locals.translations as unknown as Record<string, unknown>,
+);
+---
+
+<BaseLayout title={t('admin.educationTypes.title')}>
+    <div class="space-y-6">
+        <div class="flex items-center gap-3">
+            <a
+                href="/admin"
+                class="inline-flex items-center gap-1 text-sm text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+            >
+                <svg
+                    class="w-4 h-4"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    stroke="currentColor"
+                >
+                    <path
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        stroke-width="2"
+                        d="M15 19l-7-7 7-7"></path>
+                </svg>
+                {t('common.back')}
+            </a>
+        </div>
+
+        <h1 class="text-2xl font-bold text-gray-900 dark:text-white">
+            {t('admin.educationTypes.title')}
+        </h1>
+
+        <ReferenceDataTable
+            client:load
+            kind="educationType"
+            initialRows={rows}
+            t={translations}
+        />
+    </div>
+</BaseLayout>

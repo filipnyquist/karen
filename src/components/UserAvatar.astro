@@ -1,0 +1,60 @@
+---
+// src/components/UserAvatar.astro
+//
+// Reusable user avatar with image-or-fallback gradient.
+// Renders the user's profile picture if available, otherwise a colored circle
+// with their initials (or first character of their display name).
+//
+// The avatar is treated as a decorative element (`aria-hidden="true"` and
+// `alt=""` on the image). When it sits inside a link wrapper, the link's
+// accessible name comes from the surrounding text (e.g. the user's nickname),
+// avoiding duplicate accessible names that confuse screen readers and
+// Playwright's `getByRole('link', { name: 'X' })` queries.
+
+interface Props {
+    user?: {
+        name?: string | null;
+        nickname?: string | null;
+        email?: string | null;
+        profilePic?: string | null;
+    } | null;
+    size?: "xs" | "sm" | "md" | "lg";
+    class?: string;
+}
+
+const { user, size = "md", class: className = "" } = Astro.props;
+
+const sizeClasses = {
+    xs: "w-7 h-7 text-xs",
+    sm: "w-8 h-8 text-xs",
+    md: "w-10 h-10 text-sm",
+    lg: "w-16 h-16 text-2xl",
+}[size];
+
+const display = user?.nickname || user?.name || user?.email || "";
+const initial = display.trim().charAt(0).toUpperCase() || "?";
+---
+
+{user?.profilePic ? (
+    <img
+        src={user.profilePic}
+        alt=""
+        aria-hidden="true"
+        class:list={[
+            "rounded-full object-cover shrink-0",
+            sizeClasses,
+            className,
+        ]}
+    />
+) : (
+    <div
+        aria-hidden="true"
+        class:list={[
+            "rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center font-bold text-white shrink-0",
+            sizeClasses,
+            className,
+        ]}
+    >
+        {initial}
+    </div>
+)}

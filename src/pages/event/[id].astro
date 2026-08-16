@@ -1,0 +1,812 @@
+---
+// src/pages/event/[id].astro
+import BaseLayout from '../../layouts/BaseLayout.astro';
+import UserAvatar from '../../components/UserAvatar.astro';
+import EventCommentsPanel, {
+    type Comment,
+} from '../../islands/EventCommentsPanel';
+import EventWorkersPanel, {
+    type Worker,
+} from '../../islands/EventWorkersPanel';
+import GuestManager from '../../islands/GuestManager';
+import ReportEditor from '../../islands/ReportEditor';
+import { anonymizeName } from '../../utils/anonymize';
+import { flattenTranslations } from '../../i18n/index';
+import { sha256ScriptHash } from '../../lib/csp';
+import { db } from '../../db';
+import {
+  events, locations, eventStates, workerRegistrations, guestRegistrations,
+  comments, users, reports, userEducations, educationTypes
+} from '../../db/schema';
+import { eq, and, or, sql, desc, inArray, gt, isNull } from 'drizzle-orm';
+import { isAdmin } from '../../api/middleware/auth';
+
+const t = Astro.locals.t;
+const lang = Astro.locals.lang ?? 'sv';
+const currentUser = Astro.locals.user;
+const isAuth = !!currentUser;
+const eventId = Astro.params.id!;
+
+// events.id is uuid. A non-UUID path segment would otherwise throw
+// "invalid input syntax for type uuid" from the postgres driver and
+// surface as 500 instead of the intended 302 to /event/list.
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+if (!UUID_RE.test(eventId)) {
+  return Astro.redirect('/event/list');
+}
+
+// Fetch event with location
+const [eventResult] = await db
+  .select({
+    event: events,
+    locationName: locations.name,
+    locationDescription: locations.description,
+  })
+  .from(events)
+  .innerJoin(locations, eq(events.locationId, locations.id))
+  .where(eq(events.id, eventId))
+  .limit(1);
+
+if (!eventResult) {
+  return Astro.redirect('/event/list');
+}
+
+const event = eventResult.event;
+
+// Fetch workers with profile pictures
+const workers = await db
+  .select({
+    id: users.id,
+    nickname: users.nickname,
+    name: users.name,
+    profilePic: users.profilePic,
+    responsible: workerRegistrations.responsible,
+    createdAt: workerRegistrations.createdAt,
+  })
+  .from(workerRegistrations)
+  .innerJoin(users, eq(workerRegistrations.userId, users.id))
+  .where(eq(workerRegistrations.eventId, eventId))
+  .orderBy(desc(workerRegistrations.responsible), workerRegistrations.createdAt);
+
+// Fetch education flags for the workers (pub_worker + aas). Looks up
+// the education_type ids once and queries with both filters in one shot,
+// so we don't pull every user_educations row for these users.
+const workerIds = workers.map(w => w.id);
+const eduTypeRows = workerIds.length > 0
+  ? await db
+      .select({ id: educationTypes.id, name: educationTypes.name })
+      .from(educationTypes)
+  : [];
+const pubWorkerTypeId = eduTypeRows.find((t) => t.name === 'pub_worker')?.id;
+const aasTypeId = eduTypeRows.find((t) => t.name === 'aas')?.id;
+
+const eduRows = workerIds.length > 0
+  ? await db
+      .select({
+        userId: userEducations.userId,
+        educationTypeId: userEducations.educationTypeId,
+      })
+      .from(userEducations)
+      .where(
+        and(
+          inArray(userEducations.userId, workerIds),
+          or(
+            pubWorkerTypeId ? eq(userEducations.educationTypeId, pubWorkerTypeId) : undefined,
+            aasTypeId ? eq(userEducations.educationTypeId, aasTypeId) : undefined,
+          ),
+        ),
+      )
+  : [];
+const hasPubWorker = new Set<string>();
+const hasAas = new Set<string>();
+for (const row of eduRows) {
+  if (pubWorkerTypeId && row.educationTypeId === pubWorkerTypeId) hasPubWorker.add(row.userId);
+  if (aasTypeId && row.educationTypeId === aasTypeId) hasAas.add(row.userId);
+}
+
+// Shape workers for the live-refresh island. Anonymizes the real
+// name for non-authenticated viewers so the client never sees a full
+// name until the user logs in (the API does the same on every poll).
+const initialWorkers: Worker[] = workers.map((w) => ({
+    id: w.id,
+    nickname: w.nickname,
+    name: isAuth
+        ? w.name
+        : (anonymizeName(w.name, false) as string | null),
+    profilePic: w.profilePic,
+    responsible: !!w.responsible,
+    hasPubWorker: hasPubWorker.has(w.id),
+    hasAas: hasAas.has(w.id),
+    createdAt: w.createdAt.toISOString(),
+}));
+
+// Fetch guests
+const guests = await db
+  .select({
+    id: guestRegistrations.id,
+    guestName: guestRegistrations.guestName,
+    guestEmail: guestRegistrations.guestEmail,
+    reporterId: guestRegistrations.reporterId,
+    createdAt: guestRegistrations.createdAt,
+  })
+  .from(guestRegistrations)
+  .where(eq(guestRegistrations.eventId, eventId))
+  .orderBy(guestRegistrations.createdAt);
+
+// Fetch comments
+const eventComments = await db
+  .select({
+    id: comments.id,
+    content: comments.content,
+    createdAt: comments.createdAt,
+    userId: comments.userId,
+    userName: users.name,
+    userNickname: users.nickname,
+  })
+  .from(comments)
+  .innerJoin(users, eq(comments.userId, users.id))
+  .where(eq(comments.eventId, eventId))
+  .orderBy(desc(comments.createdAt));
+
+// Derived sets
+const responsibleUserIds = new Set(
+  workers.filter(w => w.responsible).map(w => w.id)
+);
+
+// Shape data for the live-refresh islands. Counters only depend on
+// the SSR'd counts; the islands themselves poll every 10s and replace
+// state. JSON-stringify the dates so Preact's prop serializer accepts them.
+// Anonymize the commenter's real name for non-auth viewers (same
+// pattern as the workers table above). Nickname stays public.
+const initialComments: Comment[] = eventComments.map((c) => ({
+    id: c.id,
+    content: c.content,
+    createdAt: c.createdAt.toISOString(),
+    userId: c.userId,
+    userName: isAuth
+        ? c.userName
+        : (anonymizeName(c.userName, false) as string | null),
+    userNickname: c.userNickname,
+}));
+
+// Check if current user is registered
+const isRegistered = currentUser
+  ? workers.some(w => w.id === currentUser.id)
+  : false;
+
+// Check if current user has a currently-valid responsible education.
+// Mirrors assertCanRegisterAsResponsible in src/services/responsible-
+// education.ts (exact-name match + non-null expires_at filter) so the
+// page button stays in sync with the server gate — no more "I see the
+// button but get a server 403" UX.
+const hasResponsibleEducation = currentUser
+  ? (await db
+      .select({ expiresAt: userEducations.expiresAt })
+      .from(userEducations)
+      .innerJoin(educationTypes, eq(userEducations.educationTypeId, educationTypes.id))
+      .where(and(
+        eq(userEducations.userId, currentUser.id),
+        eq(educationTypes.name, 'responsible'),
+        or(
+          isNull(userEducations.expiresAt),
+          gt(userEducations.expiresAt, new Date()),
+        ),
+      ))
+      .limit(1)).length > 0
+  : false;
+
+// Check if current user is a responsible for this event
+const isCurrentUserResponsible = currentUser
+  ? workers.some(w => w.id === currentUser.id && w.responsible)
+  : false;
+const isCurrentUserAdminOrResponsible = currentUser
+  ? (isAdmin(currentUser.role) || isCurrentUserResponsible)
+  : false;
+
+// The guest form needs the viewer's own date of birth to skip the
+// one-time prompt for members who already registered one. We
+// deliberately do NOT ship it in the initial HTML payload —
+// <GuestManager> fetches it from /api/profiles/me/birth-date when
+// the modal becomes visible.
+
+// Check if current user can scan tickets for this event
+const scanEventStart = new Date(event.startDate);
+const scanEventEnd = new Date(event.endDate);
+const canScanThisEvent = currentUser
+  ? (isAdmin(currentUser.role)
+    || (isRegistered && (() => {
+        const scanStart = new Date(scanEventStart.getTime() - 2 * 60 * 60 * 1000);
+        const dayAfterEnd = new Date(scanEventEnd);
+        dayAfterEnd.setDate(dayAfterEnd.getDate() + 1);
+        dayAfterEnd.setHours(23, 59, 59, 999);
+        const now = new Date();
+        return now >= scanStart && now <= dayAfterEnd;
+      })()))
+  : false;
+
+// Check if there's a report
+const [reportResult] = await db
+  .select()
+  .from(reports)
+  .where(eq(reports.eventId, eventId))
+  .limit(1);
+
+const startDate = new Date(event.startDate);
+const endDate = new Date(event.endDate);
+const isPast = endDate < new Date();
+const translations = flattenTranslations(Astro.locals.translations as unknown as Record<string, unknown>);
+const isReportEditing = !!reportResult;
+
+// Inline action handler — runs after the page is parsed. The literal string
+// rendered into the HTML must match the hash we register, so build it once
+// here and inject via `set:html` below.
+const eventScript = `(function(){
+  const eventId = ${JSON.stringify(eventId)};
+  const isEditing = ${JSON.stringify(isReportEditing)};
+  const t = {
+    confirmDeleteEvent: ${JSON.stringify(t('event.confirmDeleteEvent'))},
+    confirmUnlockEvent: ${JSON.stringify(t('event.confirmUnlockEvent'))},
+    lockSuccess: ${JSON.stringify(t('event.lockSuccess'))},
+    lockSuccessTickets: ${JSON.stringify(t('event.lockSuccessTickets'))},
+    unlockSuccess: ${JSON.stringify(t('event.unlockSuccess'))},
+    networkError: ${JSON.stringify(t('common.networkError'))},
+    failed: ${JSON.stringify(t('common.failed'))}
+  };
+
+  // Register as worker
+  async function registerForEvent(eventId, responsible) {
+    try {
+      const res = await fetch('/api/workers/register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ eventId, responsible }),
+        credentials: 'same-origin',
+      });
+      if (res.ok) {
+        location.reload();
+      } else {
+        const d = await res.json();
+        window.appAlert(d.error || t.failed);
+      }
+    } catch {
+      window.appAlert(t.networkError);
+    }
+  }
+  window.registerForEvent = registerForEvent;
+
+  // Unregister from event
+  async function unregisterFromEvent(eventId) {
+    try {
+      const res = await fetch('/api/workers/register/' + eventId, {
+        method: 'DELETE',
+        credentials: 'same-origin',
+      });
+      if (res.ok) {
+        location.reload();
+      } else {
+        const d = await res.json();
+        window.appAlert(d.error || t.failed);
+      }
+    } catch {
+      window.appAlert(t.networkError);
+    }
+  }
+  window.unregisterFromEvent = unregisterFromEvent;
+
+  // Delete event (admin)
+  function deleteEvent(eventId) {
+    window.appConfirm(t.confirmDeleteEvent, () => doDeleteEvent(eventId));
+  }
+  async function doDeleteEvent(eventId) {
+    try {
+      const res = await fetch('/api/events/' + eventId, {
+        method: 'DELETE',
+        credentials: 'same-origin',
+      });
+      if (res.ok) {
+        window.location.href = '/event/list';
+      } else {
+        const d = await res.json();
+        window.appAlert(d.error || t.failed);
+      }
+    } catch {
+      window.appAlert(t.networkError);
+    }
+  }
+  window.deleteEvent = deleteEvent;
+
+  // Lock event
+  const lockDialog = document.getElementById('lock-dialog');
+  const lockCancelBtn = document.getElementById('lock-cancel-btn');
+  const lockConfirmBtn = document.getElementById('lock-confirm-btn');
+  const lockIssueTickets = document.getElementById('lock-issue-tickets');
+
+  function showLockDialog() {
+    if (lockDialog) lockDialog.classList.remove('hidden');
+  }
+  window.showLockDialog = showLockDialog;
+
+  if (lockCancelBtn) {
+    lockCancelBtn.addEventListener('click', () => {
+      if (lockDialog) lockDialog.classList.add('hidden');
+    });
+  }
+  lockDialog?.addEventListener('click', (e) => {
+    if (e.target === lockDialog) lockDialog.classList.add('hidden');
+  });
+
+  if (lockConfirmBtn) {
+    lockConfirmBtn.addEventListener('click', async () => {
+      const issueTickets = lockIssueTickets?.checked ?? false;
+      lockConfirmBtn.disabled = true;
+      try {
+        const res = await fetch('/api/events/' + eventId + '/lock', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'same-origin',
+          body: JSON.stringify({ locked: true, issueTickets }),
+        });
+        if (res.ok) {
+          const data = await res.json();
+          if (data.ticketsIssued > 0) {
+            window.appAlert(t.lockSuccessTickets.replace('{count}', data.ticketsIssued));
+          } else {
+            window.appAlert(t.lockSuccess);
+          }
+          location.reload();
+        } else {
+          const d = await res.json();
+          window.appAlert(d.error || t.failed);
+          lockConfirmBtn.disabled = false;
+        }
+      } catch {
+        window.appAlert(t.networkError);
+        lockConfirmBtn.disabled = false;
+      }
+    });
+  }
+
+  // Unlock event (admin only)
+  async function doUnlockEvent() {
+    try {
+      const res = await fetch('/api/events/' + eventId + '/lock', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'same-origin',
+        body: JSON.stringify({ locked: false }),
+      });
+      if (res.ok) {
+        window.appAlert(t.unlockSuccess);
+        location.reload();
+      } else {
+        const d = await res.json();
+        window.appAlert(d.error || t.failed);
+      }
+    } catch {
+      window.appAlert(t.networkError);
+    }
+  }
+
+  // Modal helper
+  function setupModal(openId, modalId, closeId) {
+    const openBtn = document.getElementById(openId);
+    const modal = document.getElementById(modalId);
+    const closeBtn = document.getElementById(closeId);
+    if (openBtn && modal) {
+      openBtn.addEventListener('click', () => modal.classList.remove('hidden'));
+      closeBtn?.addEventListener('click', () => modal.classList.add('hidden'));
+      modal.addEventListener('click', (e) => { if (e.target === modal) modal.classList.add('hidden'); });
+    }
+  }
+
+  // Guest modal
+  setupModal('open-guest-modal-btn', 'guest-modal', 'close-guest-modal-btn');
+
+  // Report modal
+  setupModal('open-report-modal-btn', 'report-modal', 'close-report-modal-btn');
+
+  // Event delegation for buttons that carry data-action attributes.
+  // Avoids inline onclick="fn('<id>')" interpolation that would
+  // become an XSS vector if any value ever lost its ID guarantee.
+  document.body.addEventListener('click', (e) => {
+    const target = e.target instanceof Element ? e.target.closest('[data-action]') : null;
+    if (!target) return;
+    const action = target.getAttribute('data-action');
+    const evId = target.getAttribute('data-event-id');
+    switch (action) {
+      case 'delete-event':
+        window.appConfirm(t.confirmDeleteEvent, () => doDeleteEvent(evId));
+        break;
+      case 'unregister-from-event':
+        unregisterFromEvent(evId);
+        break;
+      case 'register-for-event': {
+        const responsible = target.getAttribute('data-responsible') === 'true';
+        registerForEvent(evId, responsible);
+        break;
+      }
+      case 'unlock-event':
+        window.appConfirm(t.confirmUnlockEvent, () => doUnlockEvent());
+        break;
+    }
+  });
+
+  // Lock dialog toggling
+  document.addEventListener('click', (e) => {
+    const target = e.target instanceof Element ? e.target : null;
+    if (!target) return;
+    if (target.closest('[data-action="show-lock-dialog"]')) {
+      showLockDialog();
+    }
+  });
+
+  // Listen for the GuestManager island's count broadcast after a guest
+  // is added or removed, and patch the static "Gäster (X/Y)" badge so
+  // the toolbar reflects reality without a full reload.
+  window.addEventListener('karen:event-counts', (e) => {
+    const detail = (e instanceof CustomEvent ? e.detail : null) ?? null;
+    if (!detail || detail.eventId !== eventId) return;
+    if (typeof detail.guests !== 'number') return;
+    document.querySelectorAll(
+      '[data-event-count="guests"][data-event-id="' + eventId + '"]'
+    ).forEach((el) => {
+      el.textContent = detail.maxGuests != null
+        ? detail.guests + '/' + detail.maxGuests
+        : String(detail.guests);
+    });
+  });
+
+  // Server-pushed /ws/event/:eventId notifications. We treat the page
+  // as just another listener:
+  //   guests  → refetch the canonical counts and re-fire the badge event
+  //   event   → reload (lock / metadata edits are SSR-only, simpler to
+  //             re-render the whole page than patch every DOM node)
+  //   comments / workers → handled by the islands; nothing to do here
+  let ws;
+  let backoff = 1000;
+  function connectEventSocket() {
+    try {
+      const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+      ws = new WebSocket(proto + '//' + location.host + '/ws/event/' + eventId);
+      ws.onmessage = async (msg) => {
+        backoff = 1000;
+        let payload;
+        try { payload = JSON.parse(msg.data); } catch { return; }
+        if (!payload || payload.type !== 'event-changed') return;
+        if (payload.eventId !== eventId) return;
+        if (payload.kind === 'guests') {
+          try {
+            const res = await fetch('/api/events/' + eventId + '/counts', { credentials: 'same-origin' });
+            if (!res.ok) return;
+            const data = await res.json();
+            if (typeof data.guests !== 'number') return;
+            window.dispatchEvent(new CustomEvent('karen:event-counts', {
+              detail: { eventId: eventId, guests: data.guests, maxGuests: data.maxGuests ?? null },
+            }));
+          } catch { /* swallow */ }
+        } else if (payload.kind === 'event') {
+          location.reload();
+        }
+      };
+      ws.onclose = () => {
+        setTimeout(connectEventSocket, backoff);
+        backoff = Math.min(backoff * 2, 30000);
+      };
+      ws.onerror = () => { /* let onclose handle the reconnect */ };
+    } catch {
+      setTimeout(connectEventSocket, backoff);
+      backoff = Math.min(backoff * 2, 30000);
+    }
+  }
+  connectEventSocket();
+})();`;
+
+Astro.csp?.insertScriptHash(sha256ScriptHash(eventScript));
+---
+
+<BaseLayout title={event.name}>
+  <div class="space-y-6">
+    <!-- Back link -->
+    <a href="/event/list" class="inline-flex items-center gap-1 text-sm text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200">
+      <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" />
+      </svg>
+      {t('common.back')}
+    </a>
+
+    <!-- Event header -->
+    <div class="bg-white dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-800 p-6">
+      <div class="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
+        <div class="flex-1">
+        <div class="flex flex-wrap items-center gap-x-3 gap-y-1">
+          <h1 class="text-2xl sm:text-3xl font-bold text-gray-900 dark:text-white">
+            {event.name}
+          </h1>
+          {event.locked && (
+            <span
+              class="inline-flex items-center gap-1 text-sm font-medium text-amber-700 dark:text-amber-400"
+              title={t('event.locked')}
+            >
+              <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+              </svg>
+              {t('event.locked')}
+            </span>
+          )}
+          {event.givesPoints && (
+            <span
+              class="inline-flex items-center gap-1 text-sm font-medium text-blue-700 dark:text-blue-400"
+              title={t('event.givesPoints')}
+            >
+              <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z" />
+              </svg>
+              {t('event.givesPoints')}
+            </span>
+          )}
+        </div>
+          {eventResult.locationName && (
+            <p class="mt-1 text-gray-600 dark:text-gray-400 flex items-center gap-1">
+              <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+              </svg>
+              {eventResult.locationName}
+            </p>
+          )}
+        </div>
+
+        <div class="flex items-center gap-2 shrink-0 flex-wrap">
+          {/* No-op: status indicators moved inline with the title; the action
+              toolbar below replaces this pill cluster. */}
+        </div>
+      </div>
+
+      <!-- Date/time -->
+      <div class="mt-4 flex flex-wrap gap-4 text-sm text-gray-600 dark:text-gray-400">
+        <span class="flex items-center gap-1">
+          <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+          </svg>
+          {startDate.toLocaleDateString(lang, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
+        </span>
+        <span class="flex items-center gap-1">
+          <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+          {startDate.toLocaleTimeString(lang, { hour: '2-digit', minute: '2-digit' })}
+          {' - '}
+          {endDate.toLocaleTimeString(lang, { hour: '2-digit', minute: '2-digit' })}
+        </span>
+      </div>
+
+      <!-- Description -->
+      {event.description && (
+        <div class="mt-4 prose dark:prose-invert max-w-none">
+          <p>{event.description}</p>
+        </div>
+      )}
+
+      <!-- Registration button -->
+      {currentUser && !isPast && !event.locked && (
+        <div class="mt-6 flex flex-wrap items-center gap-3">
+          {isRegistered ? (
+            /* Leaving a shift short-staffed is not a solo decision — only
+               admins and this event's responsibles can unregister themselves.
+               Everyone else gets a disabled button plus the reason. Mirrors
+               the SELF_REMOVAL_FORBIDDEN check in src/api/routes/workers.ts. */
+            isCurrentUserAdminOrResponsible ? (
+              <button data-action="unregister-from-event" data-event-id={eventId} class="px-4 py-2 rounded-md bg-red-600 text-white font-medium hover:bg-red-700 transition-colors">
+                {t('event.unregister')}
+              </button>
+            ) : (
+              <div class="flex flex-wrap items-center gap-3">
+                <button
+                  type="button"
+                  disabled
+                  aria-describedby="unregister-blocked-reason"
+                  class="px-4 py-2 rounded-md bg-red-600 text-white font-medium opacity-50 cursor-not-allowed"
+                >
+                  {t('event.unregister')}
+                </button>
+                <p id="unregister-blocked-reason" class="text-sm text-gray-600 dark:text-gray-400 max-w-md">
+                  {t('event.cannotUnregister')}
+                </p>
+              </div>
+            )
+          ) : (
+            <Fragment>
+              <button data-action="register-for-event" data-event-id={eventId} data-responsible="false" class="px-4 py-2 rounded-md bg-blue-600 text-white font-medium hover:bg-blue-700 transition-colors">
+                {t('event.register')}
+              </button>
+              {hasResponsibleEducation && (
+                <button data-action="register-for-event" data-event-id={eventId} data-responsible="true" class="px-4 py-2 rounded-md bg-yellow-500 text-white font-medium hover:bg-yellow-600 transition-colors">
+                  {t('event.registerAsResponsible')}
+                </button>
+              )}
+            </Fragment>
+          )}
+        </div>
+      )}
+
+      {/* Action toolbar: secondary actions only. Status lives inline above.
+           Each button has icon + label + distinct role color so clickability
+           is obvious (the old pill cluster mixed read-only tags with
+           clickable controls). */}
+      <div class="mt-6 pt-6 border-t border-gray-200 dark:border-gray-800 flex flex-wrap items-center gap-2">
+        {currentUser && isAdmin(currentUser.role) && (
+          <a
+            href={`/event/edit/${eventId}`}
+            class="inline-flex items-center gap-1.5 px-3 py-2 rounded-md text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+          >
+            <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+            </svg>
+            {t('common.edit')}
+          </a>
+        )}
+        {canScanThisEvent && (
+          <a
+            href={`/scanner/${eventId}`}
+            class="inline-flex items-center gap-1.5 px-3 py-2 rounded-md text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 transition-colors"
+          >
+            <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v1m6 11h2m-6 0h-2v4m0-11v-2m0 4h-2m2-2h2m-6 4h2m-2 4h-2m0-4H6m2-2h2m-2-4h2m2 4h2m2 2h2" />
+            </svg>
+            {t('ticket.scanTicket')}
+          </a>
+        )}
+        {currentUser && (
+          <button
+            id="open-guest-modal-btn"
+            disabled={!currentUser.verified}
+            class={`inline-flex items-center gap-1.5 px-3 py-2 rounded-md text-sm font-medium transition-colors ${
+              currentUser.verified
+                ? 'text-white bg-green-600 hover:bg-green-700'
+                : 'text-gray-500 bg-gray-100 dark:bg-gray-800 dark:text-gray-400 cursor-not-allowed'
+            }`}
+            title={!currentUser.verified ? t('auth.studentVerificationRequired') : undefined}
+          >
+            <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+            </svg>
+            {t('event.guests')} (<span data-event-count="guests" data-event-id={eventId}>{guests.length}{event.maxGuests ? `/${event.maxGuests}` : ''}</span>)
+          </button>
+        )}
+        {/* Anonymous viewers see the count but not the button. */}
+        {!currentUser && (
+          <span
+            data-event-count="guests"
+            data-event-id={eventId}
+            class="inline-flex items-center gap-1.5 px-3 py-2 rounded-md text-sm font-medium text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-800"
+          >
+            <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656-.126-1.283-.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+            </svg>
+            {t('event.guests')} ({guests.length}{event.maxGuests ? `/${event.maxGuests}` : ''})
+          </span>
+        )}
+        {isCurrentUserAdminOrResponsible && (
+          <button
+            id="open-report-modal-btn"
+            class={`inline-flex items-center gap-1.5 px-3 py-2 rounded-md text-sm font-medium transition-colors ${
+              isReportEditing
+                ? 'text-white bg-purple-600 hover:bg-purple-700'
+                : 'text-purple-700 dark:text-purple-300 bg-purple-50 dark:bg-purple-900/40 border border-purple-200 dark:border-purple-800 hover:bg-purple-100 dark:hover:bg-purple-900/60'
+            }`}
+          >
+            <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+            </svg>
+            {t('report.title')}{isReportEditing ? ' ✓' : ''}
+          </button>
+        )}
+        {isCurrentUserAdminOrResponsible && !event.locked && (
+          <button
+            data-action="show-lock-dialog"
+            class="inline-flex items-center gap-1.5 px-3 py-2 rounded-md text-sm font-medium text-amber-800 dark:text-amber-200 bg-amber-50 dark:bg-amber-900/40 border border-amber-200 dark:border-amber-800 hover:bg-amber-100 dark:hover:bg-amber-900/60 transition-colors"
+          >
+            <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+            </svg>
+            {t('event.lockEvent')}
+          </button>
+        )}
+        {event.locked && currentUser && isAdmin(currentUser.role) && (
+          <button
+            data-action="unlock-event"
+            class="inline-flex items-center gap-1.5 px-3 py-2 rounded-md text-sm font-medium text-amber-800 dark:text-amber-200 bg-amber-50 dark:bg-amber-900/40 border border-amber-200 dark:border-amber-800 hover:bg-amber-100 dark:hover:bg-amber-900/60 transition-colors"
+          >
+            <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 11V7a4 4 0 118 0m-4 8v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2z" />
+            </svg>
+            {t('event.unlockEvent')}
+          </button>
+        )}
+        {currentUser && isAdmin(currentUser.role) && (
+          <button
+            data-action="delete-event"
+            data-event-id={eventId}
+            class="inline-flex items-center gap-1.5 px-3 py-2 rounded-md text-sm font-medium text-red-700 dark:text-red-300 bg-white dark:bg-gray-800 border border-red-300 dark:border-red-800 hover:bg-red-50 dark:hover:bg-red-900/30 transition-colors ml-auto"
+          >
+            <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+            </svg>
+            {t('event.deleteEvent')}
+          </button>
+        )}
+      </div>
+    </div>
+
+    <!-- Workers section (table) — polled via /api/events/:id/workers.
+         Heading shows "(n/max)" once maxWorkers is known so the
+         counter lives next to the data it describes. -->
+    <EventWorkersPanel
+      client:load
+      eventId={eventId}
+      initialWorkers={initialWorkers}
+      maxWorkers={event.maxWorkers}
+      canManage={isCurrentUserAdminOrResponsible}
+      currentUserId={currentUser?.id ?? null}
+      t={translations}
+    />
+
+    <!-- Comments section — polled via /api/events/:id/comments -->
+    <div class="mt-4">
+      <EventCommentsPanel
+        client:load
+        eventId={eventId}
+        initialComments={initialComments}
+        currentUserId={currentUser?.id ?? null}
+        responsibleUserIds={Array.from(responsibleUserIds)}
+        canPost={!!currentUser}
+        canDelete={isAdmin(currentUser?.role ?? null)}
+        t={translations}
+      />
+    </div>
+  </div>
+
+  <!-- Lock Event Dialog -->
+  <div id="lock-dialog" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+    <div class="bg-white dark:bg-gray-900 rounded-lg w-full max-w-sm shadow-xl mx-4 p-6">
+      <h3 class="text-lg font-semibold text-gray-900 dark:text-white mb-4">{t('event.confirmLockEvent')}</h3>
+      <label class="flex items-center gap-2 mb-5 cursor-pointer">
+        <input type="checkbox" id="lock-issue-tickets" checked class="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500" />
+        <span class="text-sm text-gray-700 dark:text-gray-300">{t('event.issueTicketsLabel')}</span>
+      </label>
+      <div class="flex justify-end gap-2">
+        <button id="lock-cancel-btn" class="px-4 py-2 text-sm font-medium rounded-md bg-gray-100 text-gray-700 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700">{t('common.cancel')}</button>
+        <button id="lock-confirm-btn" class="px-4 py-2 text-sm font-medium rounded-md bg-amber-600 text-white hover:bg-amber-700">{t('event.lockEvent')}</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Guest Modal -->
+  <div id="guest-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+    <div class="bg-white dark:bg-gray-900 rounded-lg w-full max-w-7xl h-[95vh] shadow-xl mx-4 overflow-hidden flex flex-col">
+      <div class="bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-800 px-6 py-4 flex items-center justify-between flex-shrink-0">
+        <h2 class="text-lg font-semibold text-gray-900 dark:text-white">
+          {t('event.guests')}
+        </h2>
+        <button id="close-guest-modal-btn" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 p-1">
+          <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+          </svg>
+        </button>
+      </div>
+      <div class="p-6 overflow-y-auto flex-1">
+        <GuestManager client:load eventId={eventId} isAdmin={isAdmin(currentUser?.role ?? null)} isResponsible={isCurrentUserResponsible} isVerified={!!currentUser?.verified} isAuthenticated={isAuth} maxGuestsPerUser={event.maxGuestsPerUser ?? 3} reporterDisplayName={currentUser?.name ?? currentUser?.nickname ?? currentUser?.email ?? ''} t={translations} />
+      </div>
+    </div>
+  </div>
+
+  <!-- Report Modal -->
+  {isCurrentUserAdminOrResponsible && (
+    <div id="report-modal" class="hidden fixed inset-0 z-50 flex items-start justify-center bg-black/50 pt-4">
+      <div class="bg-white dark:bg-gray-900 rounded-lg w-full max-w-5xl h-[95vh] shadow-xl mx-4 overflow-hidden">
+        <ReportEditor client:load eventId={eventId} currentUser={currentUser ? { id: currentUser.id, name: currentUser.name, nickname: currentUser.nickname } : null} t={translations} />
+      </div>
+    </div>
+  )}
+
+  <script is:inline set:html={eventScript}></script>
+</BaseLayout>

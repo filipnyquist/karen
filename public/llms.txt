@@ -1,0 +1,19 @@
+# Karen
+
+> Karen is the event and pub-management system used by student pubs at BTH (Blekinge Institute of Technology). It provides event planning, worker scheduling, ticketing, a public scoreboard, point-of-sale / scanner tooling for pub teams, and account migration from the legacy "pykaren" system. The stack is Astro (SSR), Elysia, Preact, Postgres (Drizzle), and Bun.
+
+Most pages require authentication with a `@student.bth.se` or `@bthstudent.se` email. The home page and scoreboard are public.
+
+## Public pages
+- [Home](https://karen.nyqui.st/): Overview and entry point to the platform.
+- [Scoreboard](https://karen.nyqui.st/scoreboard): Public leaderboard for pub events and competitions.
+- [Tickets](https://karen.nyqui.st/tickets): Queue-skip ticket information.
+- [Login](https://karen.nyqui.st/login): Sign in with a BTH student account.
+- [Register](https://karen.nyqui.st/register): Create an account (requires `@student.bth.se` or `@bthstudent.se`).
+
+## Authenticated app
+- [Events](https://karen.nyqui.st/event): Browse, create, and manage pub events.
+- [Profile](https://karen.nyqui.st/profile): User profile and account settings.
+- [Pub team](https://karen.nyqui.st/pubteam): Manage your pub team's roster and scheduling.
+- [Scanner](https://karen.nyqui.st/scanner): Check tickets at the door.
+- [Reports](https://karen.nyqui.st/report): Collaborative event reports (real-time, Yjs CRDT).

@@ -1,0 +1,382 @@
+---
+// src/pages/pubteam/[id].astro
+import BaseLayout from '../../layouts/BaseLayout.astro';
+import UserAvatar from '../../components/UserAvatar.astro';
+import { db } from '../../db';
+import { pubTeams, pubTeamMembers, users } from '../../db/schema';
+import { eq } from 'drizzle-orm';
+import { anonymizeName } from '../../utils/anonymize';
+import { getTeamPoints } from '../../services/teamScoring';
+import { sha256ScriptHash } from '../../lib/csp';
+import { isAdmin } from '../../api/middleware/auth';
+
+const t = Astro.locals.t;
+const lang = Astro.locals.lang ?? 'sv';
+const currentUser = Astro.locals.user;
+const isAuth = !!currentUser;
+const teamId = Astro.params.id!;
+
+// pubTeams.id is uuid. A non-UUID path segment would otherwise throw
+// "invalid input syntax for type uuid" from the postgres driver and
+// surface as 500 instead of the intended 302 to /pubteam/list.
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+if (!UUID_RE.test(teamId)) {
+  return Astro.redirect('/pubteam/list');
+}
+
+// Fetch team
+const [team] = await db
+  .select()
+  .from(pubTeams)
+  .where(eq(pubTeams.id, teamId))
+  .limit(1);
+
+if (!team) {
+  return Astro.redirect('/pubteam/list');
+}
+
+// Fetch members
+const members = await db
+  .select({
+    userId: users.id,
+    userName: users.name,
+    userNickname: users.nickname,
+    userProfilePic: users.profilePic,
+    isAdmin: pubTeamMembers.isAdmin,
+  })
+  .from(pubTeamMembers)
+  .innerJoin(users, eq(pubTeamMembers.userId, users.id))
+  .where(eq(pubTeamMembers.teamId, teamId));
+
+const isMember = currentUser
+  ? members.some(m => m.userId === currentUser.id)
+  : false;
+const isTeamAdmin = currentUser
+  ? (isAdmin(currentUser.role) || members.some(m => m.userId === currentUser.id && m.isAdmin))
+  : false;
+const memberCount = members.length;
+const teamPoints = await getTeamPoints(teamId);
+
+// Inline team-action handler. Built in the frontmatter so the SHA-256 we
+// register matches the literal HTML that goes out.
+const teamScript = `(function(){
+  const teamId = ${JSON.stringify(teamId)};
+  const memberCount = ${JSON.stringify(memberCount)};
+  const t = {
+    failed: ${JSON.stringify(t('common.failed'))},
+    networkError: ${JSON.stringify(t('common.networkError'))},
+    confirmDeleteTeam: ${JSON.stringify(t('team.confirmDeleteTeam'))},
+    confirmRemoveMember: ${JSON.stringify(t('team.confirmRemoveMember') || 'Remove this member?')},
+    leaveConfirm: ${JSON.stringify(memberCount <= 1 ? (t('team.lastMemberWarning') || 'You are the last member. Leaving will delete this team.') : t('team.leaveTeam') + '?')},
+    codeMustBe8Chars: ${JSON.stringify(t('team.codeMustBe8Chars'))}
+  };
+
+  async function joinTeam(code) {
+    try {
+      const res = await fetch('/api/teams/' + teamId + '/join', {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ code: code }),
+      });
+      if (res.ok) { location.reload(); }
+      else { const d = await res.json(); window.appAlert(d.error || t.failed); }
+    } catch { window.appAlert(t.networkError); }
+  }
+  window.joinTeam = joinTeam;
+
+  async function regenerateCode() {
+    try {
+      const res = await fetch('/api/teams/' + teamId + '/regenerate-code', {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+      });
+      if (res.ok) { location.reload(); }
+      else { const d = await res.json(); window.appAlert(d.error || t.failed); }
+    } catch { window.appAlert(t.networkError); }
+  }
+  window.regenerateCode = regenerateCode;
+
+  // Wire the join form so a single submit handler reads the code input.
+  document.body.addEventListener('submit', (e) => {
+    const form = e.target instanceof Element ? e.target.closest('form[data-action="join-team"]') : null;
+    if (!form) return;
+    e.preventDefault();
+    const code = form.querySelector('input[name="code"]').value.trim();
+    if (code.length !== 8) {
+      window.appAlert(t.codeMustBe8Chars || 'Join code must be 8 characters');
+      return;
+    }
+    joinTeam(code);
+  });
+
+  function leaveTeam() {
+    window.appConfirm(t.leaveConfirm, async () => {
+      try {
+        const res = await fetch('/api/teams/' + teamId + '/leave', { method: 'POST', credentials: 'same-origin' });
+        if (res.ok) {
+          const data = await res.json();
+          if (data.teamDeleted) { window.location.href = '/pubteam/list'; }
+          else { location.reload(); }
+        } else {
+          const d = await res.json();
+          window.appAlert(d.error || t.failed);
+        }
+      } catch { window.appAlert(t.networkError); }
+    });
+  }
+  window.leaveTeam = leaveTeam;
+
+  function deleteTeam() {
+    window.appConfirm(t.confirmDeleteTeam, async () => {
+      try {
+        const res = await fetch('/api/teams/' + teamId, { method: 'DELETE', credentials: 'same-origin' });
+        if (res.ok) { window.location.href = '/pubteam/list'; }
+        else { const d = await res.json(); window.appAlert(d.error || t.failed); }
+      } catch { window.appAlert(t.networkError); }
+    });
+  }
+  window.deleteTeam = deleteTeam;
+
+  function removeTeamMember(userId) {
+    window.appConfirm(t.confirmRemoveMember, async () => {
+      try {
+        const res = await fetch('/api/teams/' + teamId + '/members/' + userId, { method: 'DELETE', credentials: 'same-origin' });
+        if (res.ok) { location.reload(); }
+        else { const d = await res.json(); window.appAlert(d.error || t.failed); }
+      } catch { window.appAlert(t.networkError); }
+    });
+  }
+  window.removeTeamMember = removeTeamMember;
+
+  function toggleTeamAdmin(userId, isAdmin) {
+    fetch('/api/teams/' + teamId + '/members/' + userId, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ isAdmin }),
+      credentials: 'same-origin',
+    }).then(res => {
+      if (res.ok) { location.reload(); }
+      else { return res.json().then(d => window.appAlert(d.error || t.failed)); }
+    }).catch(() => window.appAlert(t.networkError));
+  }
+
+  // Event delegation — replaces inline onclick="fn('<id>')" patterns.
+  document.body.addEventListener('click', (e) => {
+    const target = e.target instanceof Element ? e.target.closest('[data-action]') : null;
+    if (!target) return;
+    const action = target.getAttribute('data-action');
+    const userId = target.getAttribute('data-user-id');
+    switch (action) {
+      case 'join-team': /* handled by form submit listener above */ break;
+      case 'regenerate-code': regenerateCode(); break;
+      case 'leave-team': leaveTeam(); break;
+      case 'delete-team': deleteTeam(); break;
+      case 'toggle-team-admin': {
+        const isAdmin = target.getAttribute('data-is-admin') === 'true';
+        toggleTeamAdmin(userId, isAdmin);
+        break;
+      }
+      case 'remove-team-member': removeTeamMember(userId); break;
+    }
+  });
+})();`;
+
+Astro.csp?.insertScriptHash(sha256ScriptHash(teamScript));
+---
+
+<BaseLayout title={team.name}>
+  <div class="space-y-6">
+    <!-- Back link -->
+    <a href="/pubteam/list" class="inline-flex items-center gap-1 text-sm text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200">
+      <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" />
+      </svg>
+      {t('common.back')}
+    </a>
+
+    <!-- Team header -->
+    <div class="bg-white dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-800 p-6">
+      <div class="flex items-start gap-4">
+        {team.teamPic ? (
+          <img src={team.teamPic} alt={team.name} class="w-14 h-14 rounded-full object-cover shrink-0" />
+        ) : team.teamColor ? (
+          <span
+            class="w-14 h-14 rounded-full shrink-0 border-2 border-white dark:border-gray-800 shadow-sm"
+            style={`background-color: ${team.teamColor}`}
+          ></span>
+        ) : (
+          <span class="w-14 h-14 rounded-full shrink-0 bg-gray-200 dark:bg-gray-700 flex items-center justify-center text-xl font-bold text-gray-500 dark:text-gray-400">
+            {team.name[0].toUpperCase()}
+          </span>
+        )}
+        <div class="flex-1 min-w-0">
+          <h1 class="text-2xl font-bold text-gray-900 dark:text-white">
+            {team.name}
+          </h1>
+          {team.description && (
+            <p class="mt-1 text-gray-600 dark:text-gray-400">{team.description}</p>
+          )}
+          <div class="mt-2 flex items-center gap-4 text-sm text-gray-500 dark:text-gray-400">
+            <span>{members.length} {t('team.members').toLowerCase()}</span>
+            <span class="font-medium text-blue-600 dark:text-blue-400">
+              {teamPoints} {t('team.points').toLowerCase()}
+            </span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Action buttons -->
+      <div class="mt-4 flex flex-wrap gap-2 items-start">
+        {currentUser && (
+          isMember ? (
+            <button
+              data-action="leave-team"
+              class="px-4 py-2 rounded-md text-sm font-medium bg-gray-100 text-gray-700 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700 transition-colors"
+            >
+              {t('team.leaveTeam')}
+            </button>
+          ) : (
+            <form
+              data-action="join-team"
+              class="flex flex-col sm:flex-row gap-2 items-stretch sm:items-center"
+            >
+              <label for="join-code-input" class="sr-only">{t('team.joinCode') || 'Join code'}</label>
+              <input
+                id="join-code-input"
+                name="code"
+                type="text"
+                required
+                minlength={8}
+                maxlength={8}
+                autocomplete="off"
+                placeholder={t('team.joinCodePlaceholder') || '8-char code'}
+                class="px-3 py-2 rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-sm font-mono tracking-wider uppercase w-32"
+              />
+              <button
+                type="submit"
+                class="px-4 py-2 rounded-md text-sm font-medium bg-blue-600 text-white hover:bg-blue-700 transition-colors"
+              >
+                {t('team.joinTeam')}
+              </button>
+            </form>
+          )
+        )}
+        {isTeamAdmin && (
+          <Fragment>
+            <a href={`/pubteam/edit/${teamId}`} class="px-4 py-2 rounded-md text-sm font-medium bg-gray-100 text-gray-700 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700 transition-colors">
+              {t('common.edit')}
+            </a>
+          </Fragment>
+        )}
+        {isTeamAdmin && (
+          <div class="flex flex-col sm:flex-row gap-2 items-stretch sm:items-center w-full sm:w-auto">
+            <span class="text-xs text-gray-500 dark:text-gray-400 uppercase tracking-wide">{t('team.joinCode') || 'Join code'}</span>
+            <code class="px-3 py-2 rounded-md border border-gray-300 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-sm font-mono tracking-wider">{team.joinCode}</code>
+            <button
+              data-action="regenerate-code"
+              class="px-3 py-2 rounded-md text-sm font-medium bg-amber-100 text-amber-700 hover:bg-amber-200 dark:bg-amber-900 dark:text-amber-300 dark:hover:bg-amber-800 transition-colors"
+              title={t('team.regenerateCodeTitle') || 'Invalidate the current code and generate a new one'}
+            >
+              {t('team.regenerate') || 'Regenerate'}
+            </button>
+          </div>
+        )}
+        {currentUser && isAdmin(currentUser.role) && (
+          <button
+            data-action="delete-team"
+            class="px-4 py-2 rounded-md text-sm font-medium bg-red-100 text-red-600 hover:bg-red-200 dark:bg-red-900 dark:text-red-400 dark:hover:bg-red-800 transition-colors"
+          >
+            {t('common.delete')}
+          </button>
+        )}
+      </div>
+    </div>
+
+    <!-- Members table -->
+    <div class="bg-white dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-800 overflow-hidden">
+      <div class="flex items-center justify-between px-6 py-4 border-b border-gray-200 dark:border-gray-800">
+        <h2 class="text-lg font-semibold text-gray-900 dark:text-white">
+          {t('team.members')}
+        </h2>
+        <span class="text-sm text-gray-500 dark:text-gray-400">
+          {members.length}
+        </span>
+      </div>
+      {members.length === 0 ? (
+        <p class="text-sm text-gray-400 dark:text-gray-500 px-6 py-4">-</p>
+      ) : (
+        <div class="overflow-x-auto">
+          <table class="w-full text-sm">
+            <thead class="bg-gray-50 dark:bg-gray-800">
+              <tr>
+                <th class="px-4 py-2.5 text-left font-medium text-gray-500 dark:text-gray-400"></th>
+                <th class="px-4 py-2.5 text-left font-medium text-gray-500 dark:text-gray-400">{t('auth.nickname') || 'Nickname'}</th>
+                <th class="px-4 py-2.5 text-left font-medium text-gray-500 dark:text-gray-400">{t('auth.name') || 'Name'}</th>
+                <th class="px-4 py-2.5 text-left font-medium text-gray-500 dark:text-gray-400">{t('team.teamAdmin') || 'Role'}</th>
+                <th class="px-4 py-2.5"></th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-gray-200 dark:divide-gray-700">
+              {members.map((member) => (
+                <tr class="hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors">
+                  <td class="px-4 py-2.5">
+                    <a href={`/profile/${member.userId}`}>
+                      <UserAvatar user={{ nickname: member.userNickname, profilePic: member.userProfilePic }} size="sm" />
+                    </a>
+                  </td>
+                  <td class="px-4 py-2.5">
+                    <a href={`/profile/${member.userId}`} class="text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 font-medium">
+                      {member.userNickname || '-'}
+                    </a>
+                  </td>
+                  <td class="px-4 py-2.5 text-gray-700 dark:text-gray-300">
+                    {anonymizeName(member.userName, isAuth) || '-'}
+                  </td>
+                  <td class="px-4 py-2.5">
+                    <div class="flex items-center gap-1 flex-wrap">
+                      {team.createdBy === member.userId && (
+                        <span class="text-xs font-medium px-1.5 py-0.5 rounded-full bg-purple-100 text-purple-700 dark:bg-purple-900 dark:text-purple-300 whitespace-nowrap">
+                          {t('team.creator')}
+                        </span>
+                      )}
+                      {member.isAdmin && (
+                        <span class="text-xs font-medium px-1.5 py-0.5 rounded-full bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300 whitespace-nowrap">
+                          {t('team.teamAdmin')}
+                        </span>
+                      )}
+                    </div>
+                  </td>
+                  <td class="px-4 py-2.5 text-right">
+                    {isTeamAdmin && member.userId !== currentUser?.id && (
+                      <div class="flex items-center justify-end gap-2">
+                        <button
+                          data-action="toggle-team-admin"
+                          data-user-id={member.userId}
+                          data-is-admin={String(!member.isAdmin)}
+                          class="text-xs text-gray-500 hover:text-blue-600 dark:text-gray-400 dark:hover:text-blue-400 font-medium transition-colors"
+                        >
+                          {member.isAdmin ? t('team.revokeTeamAdmin') : t('team.makeTeamAdmin')}
+                        </button>
+                        <button
+                          data-action="remove-team-member"
+                          data-user-id={member.userId}
+                          class="text-xs text-red-500 hover:text-red-700 dark:hover:text-red-400 font-medium transition-colors"
+                        >
+                          {t('common.delete')}
+                        </button>
+                      </div>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  </div>
+
+  <script is:inline set:html={teamScript}></script>
+</BaseLayout>

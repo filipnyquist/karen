@@ -1,0 +1,174 @@
+// src/api/routes/events.ts
+
+import { Elysia, t } from "elysia";
+import { notifyEventChange } from "../../realtime/event-bus";
+import {
+    createEvent,
+    deleteEvent,
+    getEventById,
+    listEvents,
+    updateEvent,
+} from "../../services/events";
+import { issueTicketsForEvent } from "../../services/tickets";
+import {
+    adminDerive,
+    isAdmin,
+    responsibleOrAdminDerive,
+} from "../middleware/auth";
+import { AppError } from "../middleware/error";
+
+export const eventRoutes = new Elysia()
+    // Public routes
+    .use(
+        new Elysia({ prefix: "/events" })
+            .get(
+                "/",
+                async ({ query }) => {
+                    const limit = parseInt(query?.limit ?? "50", 10);
+                    const offset = parseInt(query?.offset ?? "0", 10);
+                    const result = await listEvents({ limit, offset });
+                    return result.map((r) => ({
+                        ...r.event,
+                        location: r.location,
+                        state: r.state,
+                    }));
+                },
+                {
+                    query: t.Object({
+                        limit: t.Optional(t.String()),
+                        offset: t.Optional(t.String()),
+                    }),
+                },
+            )
+            .get("/:id", async ({ params }) => {
+                const { event, location, state } = await getEventById(
+                    params.id,
+                );
+                return { ...event, location, state };
+            }),
+    )
+    // Admin routes
+    .use(
+        new Elysia({ prefix: "/events" })
+            .derive(adminDerive)
+            .post(
+                "/",
+                async ({ body, user }) => {
+                    const event = await createEvent({
+                        ...body,
+                        createdBy: user.id,
+                    });
+                    return event;
+                },
+                {
+                    body: t.Object({
+                        name: t.String({ maxLength: 100 }),
+                        description: t.Optional(t.String({ maxLength: 500 })),
+                        locationId: t.Number(),
+                        startDate: t.String(),
+                        endDate: t.String(),
+                        maxGuests: t.Optional(t.Number()),
+                        maxResponsibles: t.Optional(t.Number()),
+                        maxWorkers: t.Optional(t.Number()),
+                        minResponsibles: t.Optional(t.Number()),
+                        minWorkers: t.Optional(t.Number()),
+                        maxGuestsPerUser: t.Optional(t.Number()),
+                        willOccur: t.Number(),
+                        givesPoints: t.Optional(t.Boolean()),
+                    }),
+                },
+            )
+            .delete("/:id", async ({ params }) => {
+                await deleteEvent(params.id);
+                return { success: true };
+            }),
+    )
+    // Responsible or admin routes
+    .use(
+        new Elysia({ prefix: "/events" })
+            .derive(responsibleOrAdminDerive("id"))
+            .put(
+                "/:id",
+                async ({ params, body, user }) => {
+                    // Enforce the same rule as the dedicated /lock endpoint:
+                    // only admins may flip `locked: false`. The dedicated
+                    // endpoint also handles the `issueTickets` side effect,
+                    // so prefer that route for lock-state changes.
+                    //
+                    // Elysia 1.4 strips unknown body fields silently, but
+                    // `locked` is still in the schema so it survives here.
+                    if (body.locked === false && !isAdmin(user.role)) {
+                        throw new AppError(
+                            "Only admins can unlock events — use POST /api/events/:id/lock",
+                            403,
+                            "FORBIDDEN",
+                        );
+                    }
+                    const updated = await updateEvent(params.id, body);
+                    notifyEventChange(params.id, "event");
+                    return updated;
+                },
+                {
+                    body: t.Object({
+                        name: t.Optional(t.String({ maxLength: 100 })),
+                        description: t.Optional(t.String({ maxLength: 500 })),
+                        locationId: t.Optional(t.Number()),
+                        startDate: t.Optional(t.String()),
+                        endDate: t.Optional(t.String()),
+                        maxGuests: t.Optional(t.Number()),
+                        maxResponsibles: t.Optional(t.Number()),
+                        maxWorkers: t.Optional(t.Number()),
+                        minResponsibles: t.Optional(t.Number()),
+                        minWorkers: t.Optional(t.Number()),
+                        maxGuestsPerUser: t.Optional(t.Number()),
+                        willOccur: t.Optional(t.Number()),
+                        givesPoints: t.Optional(t.Boolean()),
+                        locked: t.Optional(t.Boolean()),
+                    }),
+                },
+            ),
+    )
+    // Lock/unlock event
+    .use(
+        new Elysia({ prefix: "/events" })
+            .derive(responsibleOrAdminDerive("id"))
+            .post(
+                "/:id/lock",
+                async ({ params, body, user }) => {
+                    if (!body.locked && !isAdmin(user.role)) {
+                        throw new AppError(
+                            "Only admins can unlock events",
+                            403,
+                            "FORBIDDEN",
+                        );
+                    }
+
+                    await updateEvent(params.id, { locked: body.locked });
+                    notifyEventChange(params.id, "event");
+
+                    let ticketsIssued = 0;
+                    let ticketsFailed: string[] = [];
+                    if (body.locked && body.issueTickets) {
+                        const result = await issueTicketsForEvent(
+                            params.id,
+                            user.id,
+                        );
+                        ticketsIssued = result.issued;
+                        ticketsFailed = result.failed;
+                    }
+
+                    return {
+                        success: true,
+                        locked: body.locked,
+                        ticketsIssued,
+                        ticketsFailed,
+                    };
+                },
+                {
+                    body: t.Object({
+                        locked: t.Boolean(),
+                        issueTickets: t.Optional(t.Boolean()),
+                    }),
+                },
+            ),
+    );

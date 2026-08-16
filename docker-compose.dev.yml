@@ -1,0 +1,81 @@
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    ports:
+      - "4321:4321"
+    # SMTP + TURNSTILE creds live in .env (not committed). The explicit
+    # `environment:` entries below override any value pulled in from .env
+    # for keys that must point at the in-network / dev-only paths.
+    env_file:
+      - .env
+    environment:
+      - DATABASE_URL=postgresql://karen:karen@db:5432/karen
+      - BASE_URL=http://localhost:4321
+      - SESSION_SECRET=dev-secret-not-for-production
+      - DEFAULT_MAX_GUESTS=35
+      - DEFAULT_MAX_GUESTS_PER_USER=3
+      # Override UPLOAD_DIR to the in-container path so .env's
+      # `./uploads` (host-relative) doesn't bind to the wrong location.
+      - UPLOAD_DIR=/app/uploads
+      # Pin the server's default timezone to Europe/Stockholm. Without
+      # this, `new Date().toLocaleTimeString()` on the SSR side falls back
+      # to the container's UTC, which renders events 2 hours behind the
+      # wall-clock time the user entered in the form (CEST = UTC+2).
+      - TZ=Europe/Stockholm
+
+    volumes:
+      - ./src:/app/src
+      - ./public:/app/public
+      - ./astro.config.mjs:/app/astro.config.mjs
+      - ./tailwind.config.mjs:/app/tailwind.config.mjs
+      - ./drizzle.config.ts:/app/drizzle.config.ts
+      - ./uploads:/app/uploads
+    depends_on:
+      db:
+        condition: service_healthy
+
+  db:
+    image: postgres:16-alpine
+    ports:
+      - "5432:5432"
+    environment:
+      - POSTGRES_USER=karen
+      - POSTGRES_PASSWORD=karen
+      - POSTGRES_DB=karen
+    volumes:
+      - pgdata_dev:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U karen"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # Run migrations + seed on first start
+  migrate:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    # Reads ADMIN_PASSWORD + SUPERADMIN_PASSWORD from .env (required by
+    # src/db/seed.ts for admin@karen.se + superadmin@karen.se).
+    # DATABASE_URL is set explicitly below and overrides anything in .env.
+    env_file:
+      - .env
+    environment:
+      - DATABASE_URL=postgresql://karen:karen@db:5432/karen
+    command: ["sh", "-c", "bun db:migrate && bun db:seed"]
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: "no"
+
+volumes:
+  pgdata_dev:
+
+# Fixed network name so the dev stack can join the prod stack's `karen-net`
+# (and vice versa) — needed for the import profile to reach `db:5432`
+# regardless of cwd.
+networks:
+  default:
+    name: karen-net

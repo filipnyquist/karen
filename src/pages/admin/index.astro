@@ -1,0 +1,75 @@
+---
+// src/pages/admin/index.astro
+import BaseLayout from '../../layouts/BaseLayout.astro';
+import AdminDashboard from '../../islands/AdminDashboard';
+import { flattenTranslations } from '../../i18n/index';
+import { db } from '../../db';
+import { users, educationTypes } from '../../db/schema';
+import { eq } from 'drizzle-orm';
+import { isSuperadmin } from '../../api/middleware/auth';
+import { requireAdmin } from '../../lib/guards';
+
+const t = Astro.locals.t;
+const lang = Astro.locals.lang ?? 'sv';
+const guard = requireAdmin(Astro);
+if (guard instanceof Response) return guard;
+const currentUser = guard;
+
+const currentUserIsSuperadmin = isSuperadmin(currentUser.role);
+
+// Filter out legacy placeholder rows (created by the importer) so the
+// admin user table only shows real accounts. Legacy placeholders are
+// browsable via /admin/migrate.
+const allUsers = await db
+  .select({
+    id: users.id,
+    email: users.email,
+    name: users.name,
+    nickname: users.nickname,
+    role: users.role,
+    emailVerified: users.emailVerified,
+    verified: users.verified,
+    createdAt: users.createdAt,
+  })
+  .from(users)
+  .where(eq(users.isLegacy, false))
+  .orderBy(users.createdAt);
+
+const eduTypes = await db.select().from(educationTypes);
+const translations = flattenTranslations(Astro.locals.translations as unknown as Record<string, unknown>);
+---
+
+<BaseLayout title={t('admin.title')}>
+  <div class="space-y-6">
+    <h1 class="text-2xl font-bold text-gray-900 dark:text-white">{t('admin.title')}</h1>
+
+    <div class="flex gap-3">
+      <a href="/event/create" class="px-4 py-2 rounded-md bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 transition-colors">
+        {t('event.createEvent') || 'Create Event'}
+      </a>
+      {currentUserIsSuperadmin && (
+        <a href="/admin/audit-log" class="px-4 py-2 rounded-md bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 text-sm font-medium hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors">
+          {t('admin.auditLog')}
+        </a>
+      )}
+      {currentUserIsSuperadmin && (
+        <a href="/admin/locations" class="px-4 py-2 rounded-md bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 text-sm font-medium hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors">
+          {t('admin.locations.title')}
+        </a>
+      )}
+      {currentUserIsSuperadmin && (
+        <a href="/admin/education-types" class="px-4 py-2 rounded-md bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 text-sm font-medium hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors">
+          {t('admin.educationTypes.title')}
+        </a>
+      )}
+      <a href="/admin/exports/scoreboard" class="px-4 py-2 rounded-md bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 text-sm font-medium hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors">
+        {t('export.scoreboardButton') || 'Scoreboard export'}
+      </a>
+      <a href="/admin/migrate" class="px-4 py-2 rounded-md bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 text-sm font-medium hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors">
+        {t('migration.adminTitle')}
+      </a>
+    </div>
+
+    <AdminDashboard client:load initialUsers={allUsers} educationTypes={eduTypes} currentUserIsSuperadmin={currentUserIsSuperadmin} t={translations} />
+  </div>
+</BaseLayout>

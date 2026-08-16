@@ -1,0 +1,41 @@
+---
+// src/pages/privacy.astro
+//
+// Public-facing privacy notice. Content is bilingual via Astro.locals.t —
+// the page reads the same `privacy.*` keys on both EN and SV. MVP copy;
+// should be reviewed by the org's data-protection officer before
+// production deploy.
+
+import BaseLayout from "../layouts/BaseLayout.astro";
+
+const t = Astro.locals.t;
+---
+
+<BaseLayout title={t("privacy.title")}>
+    <article class="prose dark:prose-invert max-w-3xl mx-auto">
+        <h1>{t("privacy.title")}</h1>
+        <p class="text-sm text-gray-500 dark:text-gray-400">
+            {t("privacy.lastUpdated")}
+        </p>
+
+        <p>{t("privacy.intro")}</p>
+
+        <h2>{t("privacy.collect.heading")}</h2>
+        <p>{t("privacy.collect.body")}</p>
+
+        <h2>{t("privacy.legalBasis.heading")}</h2>
+        <p>{t("privacy.legalBasis.body")}</p>
+
+        <h2>{t("privacy.rights.heading")}</h2>
+        <p>{t("privacy.rights.body")}</p>
+
+        <h2>{t("privacy.retention.heading")}</h2>
+        <p>{t("privacy.retention.body")}</p>
+
+        <h2>{t("privacy.cookies.heading")}</h2>
+        <p>{t("privacy.cookies.body")}</p>
+
+        <h2>{t("privacy.contact.heading")}</h2>
+        <p>{t("privacy.contact.body")}</p>
+    </article>
+</BaseLayout>

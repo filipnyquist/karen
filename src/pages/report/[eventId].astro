@@ -1,0 +1,46 @@
+---
+// src/pages/report/[eventId].astro
+import BaseLayout from '../../layouts/BaseLayout.astro';
+import ReportEditor from '../../islands/ReportEditor';
+import { flattenTranslations } from '../../i18n/index';
+import { db } from '../../db';
+import { events, locations } from '../../db/schema';
+import { eq } from 'drizzle-orm';
+import { requireResponsibleOrAdmin } from '../../lib/guards';
+
+const t = Astro.locals.t;
+// Page-level gate: matches the API gate (`responsibleOrAdminDerive("eventId")`).
+// Anonymous viewers go to /login; logged-in non-responsibles go to /.
+const guard = await requireResponsibleOrAdmin(Astro, "eventId");
+if (guard instanceof Response) return guard;
+const _currentUser = guard;
+void _currentUser; // handed off to the ReportEditor island below
+const eventId = Astro.params.eventId!;
+
+// Fetch event
+const [eventResult] = await db
+  .select({
+    event: events,
+    locationName: locations.name,
+  })
+  .from(events)
+  .innerJoin(locations, eq(events.locationId, locations.id))
+  .where(eq(events.id, eventId))
+  .limit(1);
+
+if (!eventResult) {
+  return Astro.redirect('/event/list');
+}
+
+const event = eventResult.event;
+
+const translations = flattenTranslations(Astro.locals.translations as unknown as Record<string, unknown>);
+---
+
+<BaseLayout title={`${t('report.title')} - ${event.name}`}>
+  <div class="space-y-4 max-w-5xl mx-auto">
+    <div class="bg-white dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-800 overflow-hidden" style="height: calc(100vh - 8rem);">
+      <ReportEditor client:load eventId={eventId} currentUser={guard ? { id: guard.id, name: guard.name, nickname: guard.nickname } : null} t={translations} />
+    </div>
+  </div>
+</BaseLayout>

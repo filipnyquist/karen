@@ -1,0 +1,11 @@
+FROM oven/bun:1
+WORKDIR /app
+
+COPY package.json bun.lock ./
+RUN bun install
+
+COPY . .
+
+# Astro dev server with hot reload
+EXPOSE 4321
+CMD ["bun", "dev", "--host", "0.0.0.0"]

@@ -1,0 +1,130 @@
+---
+// src/pages/accept-invite.astro
+//
+// Renders the form an invitee uses to claim an invitation token, set their
+// password, and log in. Submission posts to /api/invitations/accept which
+// creates the user, marks the invitation accepted, and mints a session.
+
+import BaseLayout from '../layouts/BaseLayout.astro';
+import { flattenTranslations } from '../i18n/index';
+
+const t = Astro.locals.t;
+const token = Astro.url.searchParams.get('token') ?? '';
+
+// SSR fetch: peek the invitation so we can pre-fill the email and show
+// the role. Errors fall through to the "invalid" branch.
+let preview: { email: string; role: string } | null = null;
+let invalid = false;
+
+if (token) {
+  try {
+    const baseUrl = new URL(Astro.request.url).origin;
+    const res = await fetch(`${baseUrl}/api/invitations/check?token=${encodeURIComponent(token)}`);
+    if (res.ok) {
+      preview = (await res.json()) as { email: string; role: string };
+    } else {
+      invalid = true;
+    }
+  } catch {
+    invalid = true;
+  }
+} else {
+  invalid = true;
+}
+
+const translations = flattenTranslations(Astro.locals.translations as unknown as Record<string, unknown>);
+---
+
+<BaseLayout title={t('invite.acceptTitle') || 'Accept invitation'}>
+  <div class="max-w-md mx-auto space-y-6">
+    <h1 class="text-2xl font-bold text-gray-900 dark:text-white">
+      {t('invite.acceptTitle') || 'Accept invitation'}
+    </h1>
+
+    {invalid ? (
+      <div class="bg-red-50 dark:bg-red-950 border border-red-200 dark:border-red-800 rounded-md p-4 text-sm text-red-700 dark:text-red-300">
+        {t('invite.invalidToken') || 'This invitation is invalid or has expired.'}
+      </div>
+    ) : preview && (
+      <form
+        method="post"
+        action="/api/invitations/accept"
+        class="space-y-4 bg-white dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-800 p-6"
+      >
+        <p class="text-sm text-gray-600 dark:text-gray-400">
+          {t('invite.acceptDescription') || 'You have been invited to join Karen. Set a password to activate your account.'}
+        </p>
+
+        <div class="space-y-1">
+          <label class="block text-xs font-medium text-gray-500 dark:text-gray-400">
+            {t('invite.emailLabel') || 'Email'}
+          </label>
+          <input
+            type="email"
+            value={preview.email}
+            readonly
+            class="w-full px-3 py-2 rounded-md border border-gray-300 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-gray-700 dark:text-gray-300 text-sm"
+          />
+        </div>
+
+        <div class="space-y-1">
+          <span class="block text-xs font-medium text-gray-500 dark:text-gray-400">
+            {t('invite.roleLabel') || 'Role'}
+          </span>
+          <span class="inline-flex items-center text-sm font-medium px-3 py-1 rounded-full bg-purple-100 text-purple-700 dark:bg-purple-900 dark:text-purple-300">
+            {preview.role}
+          </span>
+        </div>
+
+        <input type="hidden" name="token" value={token} />
+
+        <div class="space-y-1">
+          <label class="block text-xs font-medium text-gray-500 dark:text-gray-400" for="name">
+            {t('invite.nameLabel') || 'Name'}
+          </label>
+          <input
+            id="name"
+            name="name"
+            type="text"
+            required
+            class="w-full px-3 py-2 rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white text-sm"
+          />
+        </div>
+
+        <div class="space-y-1">
+          <label class="block text-xs font-medium text-gray-500 dark:text-gray-400" for="nickname">
+            {t('invite.nicknameLabel') || 'Nickname'}
+          </label>
+          <input
+            id="nickname"
+            name="nickname"
+            type="text"
+            required
+            class="w-full px-3 py-2 rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white text-sm"
+          />
+        </div>
+
+        <div class="space-y-1">
+          <label class="block text-xs font-medium text-gray-500 dark:text-gray-400" for="password">
+            {t('invite.passwordLabel') || 'Password'}
+          </label>
+          <input
+            id="password"
+            name="password"
+            type="password"
+            required
+            minlength="8"
+            class="w-full px-3 py-2 rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white text-sm"
+          />
+        </div>
+
+        <button
+          type="submit"
+          class="w-full px-4 py-2 rounded-md bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 transition-colors"
+        >
+          {t('invite.submit') || 'Activate account'}
+        </button>
+      </form>
+    )}
+  </div>
+</BaseLayout>

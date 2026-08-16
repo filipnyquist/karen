@@ -1,0 +1,78 @@
+services:
+  app:
+    build: .
+    ports:
+      - "3000:3000"
+    # DATABASE_SSL=disable is required: the release image bakes
+    # NODE_ENV=production, which makes the postgres-js driver require
+    # TLS by default. The postgres container is reachable only on the
+    # internal karen-net bridge and does not have TLS configured.
+    environment:
+      - DATABASE_URL=postgresql://karen:karen@db:5432/karen
+      - DATABASE_SSL=disable
+      - SMTP_HOST=${SMTP_HOST:-}
+      - SMTP_PORT=${SMTP_PORT:-587}
+      - SMTP_USER=${SMTP_USER:-}
+      - SMTP_PASS=${SMTP_PASS:-}
+      - SMTP_FROM=${SMTP_FROM:-noreply@karen.se}
+      - BASE_URL=${BASE_URL:-http://localhost:3000}
+      - SESSION_SECRET=${SESSION_SECRET:-change-me-in-production}
+      - SESSION_MAX_AGE_MS=${SESSION_MAX_AGE_MS:-2592000000}
+      - DEFAULT_MAX_GUESTS=${DEFAULT_MAX_GUESTS:-35}
+      - DEFAULT_MAX_GUESTS_PER_USER=${DEFAULT_MAX_GUESTS_PER_USER:-3}
+      - TURNSTILE_SITEKEY=${TURNSTILE_SITEKEY:-}
+      - TURNSTILE_SECRET=${TURNSTILE_SECRET:-}
+      - UPLOAD_DIR=/app/uploads
+      # Pin the server's default timezone to Europe/Stockholm. Without
+      # this, `new Date().toLocaleTimeString()` on the SSR side falls back
+      # to the container's UTC, which renders events 2 hours behind the
+      # wall-clock time the user entered in the form (CEST = UTC+2).
+      - TZ=Europe/Stockholm
+    volumes:
+      - uploads:/app/uploads
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+
+  db:
+    image: postgres:16-alpine
+    environment:
+      - POSTGRES_USER=karen
+      - POSTGRES_PASSWORD=karen
+      - POSTGRES_DB=karen
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U karen"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # Run migrations + seed on first start
+  migrate:
+    build: .
+    # Reads ADMIN_PASSWORD + SUPERADMIN_PASSWORD from .env (required by
+    # src/db/seed.ts via src/config.ts:67-68). DATABASE_URL is set
+    # explicitly below and overrides anything in .env.
+    env_file:
+      - .env
+    # Same DATABASE_SSL rationale as app — see comment above.
+    environment:
+      - DATABASE_URL=postgresql://karen:karen@db:5432/karen
+      - DATABASE_SSL=disable
+    command: ["sh", "-c", "bun db:migrate && bun db:seed"]
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: "no"
+
+volumes:
+  pgdata:
+  uploads:
+
+# Fixed network name so the dev/import stacks can join it from any cwd.
+networks:
+  default:
+    name: karen-net

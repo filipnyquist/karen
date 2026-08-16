@@ -1,0 +1,44 @@
+---
+// src/components/LanguageSwitcher.astro
+//
+// Inline `onclick` handlers are blocked by CSP, so this component uses
+// `data-action="set-lang"` + `data-lang` and lets BaseLayout's body-click
+// delegator do the actual work.
+interface Props {
+  lang: string;
+}
+
+const { lang } = Astro.props;
+---
+
+<div class="inline-flex rounded-md border border-gray-200 dark:border-gray-700 overflow-hidden">
+  <button
+    type="button"
+    lang="sv"
+    data-action="set-lang"
+    data-lang="sv"
+    class:list={[
+      'px-3 py-1 text-sm font-medium transition-colors',
+      lang === 'sv'
+        ? 'bg-blue-600 text-white'
+        : 'bg-white text-gray-600 hover:bg-gray-50 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700',
+    ]}
+  >
+    SV
+  </button>
+  <button
+    type="button"
+    lang="en"
+    data-action="set-lang"
+    data-lang="en"
+    class:list={[
+      'px-3 py-1 text-sm font-medium transition-colors border-l border-gray-200 dark:border-gray-700',
+      lang === 'en'
+        ? 'bg-blue-600 text-white'
+        : 'bg-white text-gray-600 hover:bg-gray-50 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700',
+    ]}
+  >
+    EN
+  </button>
+</div>
+

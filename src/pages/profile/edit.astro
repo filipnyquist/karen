@@ -1,0 +1,48 @@
+---
+// src/pages/profile/edit.astro
+import BaseLayout from '../../layouts/BaseLayout.astro';
+import ProfileEditor from '../../islands/ProfileEditor';
+import { flattenTranslations } from '../../i18n/index';
+import { db } from '../../db';
+import { users } from '../../db/schema';
+import { eq } from 'drizzle-orm';
+import { requireAuth } from '../../lib/guards';
+
+const t = Astro.locals.t;
+const lang = Astro.locals.lang ?? 'sv';
+const guard = requireAuth(Astro);
+if (guard instanceof Response) return guard;
+const currentUser = guard;
+
+const [profile] = await db
+  .select({
+    name: users.name,
+    nickname: users.nickname,
+    description: users.description,
+    profilePic: users.profilePic,
+  })
+  .from(users)
+  .where(eq(users.id, currentUser.id))
+  .limit(1);
+
+if (!profile) {
+  return Astro.redirect('/');
+}
+
+const translations = flattenTranslations(Astro.locals.translations as unknown as Record<string, unknown>);
+---
+
+<BaseLayout title={t('profile.editProfile')}>
+  <div class="space-y-6">
+    <a href={`/profile/${currentUser.id}`} class="inline-flex items-center gap-1 text-sm text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200">
+      <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" />
+      </svg>
+      {t('common.back')}
+    </a>
+
+    <h1 class="text-2xl font-bold text-gray-900 dark:text-white">{t('profile.editProfile')}</h1>
+
+    <ProfileEditor client:load profile={profile} userId={currentUser.id} t={translations} />
+  </div>
+</BaseLayout>

@@ -1,0 +1,12 @@
+# robots.txt — Karen (Astro SSR)
+# https://www.robotstxt.org/
+
+User-agent: *
+Allow: /
+
+# Private / non-public surfaces
+Disallow: /api/
+Disallow: /admin/
+Disallow: /scanner/
+Disallow: /uploads/
+Disallow: /ws/

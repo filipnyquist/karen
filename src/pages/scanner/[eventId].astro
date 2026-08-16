@@ -1,0 +1,34 @@
+---
+// src/pages/scanner/[eventId].astro
+import BaseLayout from '../../layouts/BaseLayout.astro';
+import QRScanner from '../../islands/QRScanner';
+import { canScanTickets } from '../../services/tickets';
+import { flattenTranslations } from '../../i18n';
+import { requireAuth } from '../../lib/guards';
+
+const t = Astro.locals.t;
+const guard = requireAuth(Astro);
+if (guard instanceof Response) return guard;
+const currentUser = guard;
+
+const { eventId } = Astro.params;
+const authorized = await canScanTickets(currentUser.id, currentUser.role, eventId!);
+if (!authorized) {
+  // Wrong-event scanners land on the event list rather than seeing
+  // a fully-functional camera UI that fails on first scan.
+  return Astro.redirect('/event/list');
+}
+
+const translations = flattenTranslations(Astro.locals.translations);
+---
+
+<BaseLayout title={t('ticket.scanTicket')}>
+  <h1 class="text-2xl font-bold mb-6">{t('ticket.scanTicket')}</h1>
+  <div class="max-w-md mx-auto">
+    <QRScanner
+      client:load
+      eventId={eventId!}
+      t={translations}
+    />
+  </div>
+</BaseLayout>

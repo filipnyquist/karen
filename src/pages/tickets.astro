@@ -1,0 +1,100 @@
+---
+// src/pages/tickets.astro
+import BaseLayout from '../layouts/BaseLayout.astro';
+import TicketCards from '../islands/TicketCards';
+import { db } from '../db';
+import { tickets, events } from '../db/schema';
+import { eq, and, desc } from 'drizzle-orm';
+import { flattenTranslations } from '../i18n';
+import QRCode from 'qrcode';
+
+const t = Astro.locals.t;
+const lang = Astro.locals.lang ?? 'sv';
+const user = Astro.locals.user;
+
+if (!user) {
+  return Astro.redirect('/login');
+}
+
+// Fetch active tickets for current user
+const activeTickets = await db
+  .select({
+    ticket: tickets,
+    eventName: events.name,
+    eventStartDate: events.startDate,
+  })
+  .from(tickets)
+  .innerJoin(events, eq(tickets.eventId, events.id))
+  .where(and(eq(tickets.userId, user.id), eq(tickets.isActive, true)))
+  .orderBy(desc(tickets.createdAt));
+
+// Fetch recently redeemed tickets
+const redeemedTickets = await db
+  .select({
+    ticket: tickets,
+    eventName: events.name,
+    eventStartDate: events.startDate,
+  })
+  .from(tickets)
+  .innerJoin(events, eq(tickets.eventId, events.id))
+  .where(and(eq(tickets.userId, user.id), eq(tickets.isActive, false)))
+  .orderBy(desc(tickets.redeemedAt))
+  .limit(10);
+
+const translations = flattenTranslations(Astro.locals.translations);
+
+/**
+ * Render QR PNG as a data URL server-side so the raw ticket token never
+ * reaches the browser. The island receives an opaque PNG, not the secret.
+ */
+const QR_OPTIONS = {
+  width: 160,
+  margin: 2,
+  color: { dark: '#1a1a2e', light: '#ffffff' },
+} as const;
+
+async function toQrPng(token: string): Promise<string> {
+  return QRCode.toDataURL(token, QR_OPTIONS);
+}
+
+const activeWithQr = await Promise.all(
+  activeTickets.map(async ({ ticket, eventName, eventStartDate }) => ({
+    id: ticket.id,
+    qrPng: await toQrPng(ticket.token),
+    eventName,
+    eventStartDate:
+      eventStartDate instanceof Date
+        ? eventStartDate.toISOString()
+        : String(eventStartDate),
+    createdAt:
+      ticket.createdAt instanceof Date
+        ? ticket.createdAt.toISOString()
+        : String(ticket.createdAt),
+  })),
+);
+---
+
+<BaseLayout title={t('ticket.title')}>
+  <div class="space-y-6">
+    <h1 class="text-2xl font-bold text-gray-900 dark:text-white">
+      {t('ticket.myTickets')}
+    </h1>
+
+    <TicketCards
+      client:load
+      activeTickets={activeWithQr}
+      redeemedTickets={redeemedTickets.map(({ ticket, eventName }) => ({
+        eventName,
+        eventStartDate: '',
+        redeemedAt:
+          ticket.redeemedAt instanceof Date
+            ? ticket.redeemedAt.toISOString()
+            : ticket.redeemedAt
+              ? String(ticket.redeemedAt)
+              : null,
+      }))}
+      lang={lang}
+      t={translations}
+    />
+  </div>
+</BaseLayout>

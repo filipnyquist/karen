@@ -1,0 +1,480 @@
+---
+// src/pages/event/list.astro
+import BaseLayout from '../../layouts/BaseLayout.astro';
+import EventCalendar from '../../islands/EventCalendar';
+import { db } from '../../db';
+import { eventStates, events, locations, workerRegistrations, guestRegistrations } from '../../db/schema';
+import { eq, desc, asc, sql, gt, lt, and, or, gte, lte, like } from 'drizzle-orm';
+import { isAdmin } from '../../api/middleware/auth';
+
+const t = Astro.locals.t;
+const lang = Astro.locals.lang ?? 'sv';
+const currentUser = Astro.locals.user;
+
+const page = parseInt(Astro.url.searchParams.get('page') ?? '1');
+const limit = 20;
+const offset = (page - 1) * limit;
+const filter = Astro.url.searchParams.get('filter') ?? 'upcoming';
+const view = Astro.url.searchParams.get('view') ?? 'table';
+
+// Filter params
+const search = Astro.url.searchParams.get('search') ?? '';
+const locationFilter = Astro.url.searchParams.get('location') ?? '';
+const stateFilter = Astro.url.searchParams.get('state') ?? '';
+const dateFrom = Astro.url.searchParams.get('dateFrom') ?? '';
+const dateTo = Astro.url.searchParams.get('dateTo') ?? '';
+
+// Sort params
+const rawSortParam = Astro.url.searchParams.get('sort');
+const rawDirParam = Astro.url.searchParams.get('dir');
+const validSorts = ['name', 'startDate', 'location'];
+const sortCol = rawSortParam && validSorts.includes(rawSortParam) ? rawSortParam : 'startDate';
+const defaultDir = filter === 'past' ? 'desc' : 'asc';
+const sortDir = rawDirParam === 'desc' || rawDirParam === 'asc' ? rawDirParam : defaultDir;
+const sortParam = rawSortParam || sortCol;
+
+// Fetch filter dropdown data
+const allLocations = await db.select({ id: locations.id, name: locations.name }).from(locations).orderBy(locations.name);
+const allEventStates = await db.select({ id: eventStates.id, name: eventStates.name }).from(eventStates);
+
+// Build query conditions
+const now = new Date();
+const conditions: any[] = [];
+
+// Time-based filter. The default 'upcoming' covers BOTH currently-
+// running and not-yet-started events (anything that hasn't finished
+// yet) — `getStateLabel()` below classifies ongoing vs upcoming
+// for the badge, so the UI still distinguishes them.
+if (filter === 'past') {
+  conditions.push(lt(events.endDate, now));
+} else if (filter === 'upcoming') {
+  conditions.push(gte(events.endDate, now));
+}
+
+// Keyword search
+if (search.trim()) {
+  const term = `%${search.trim()}%`;
+  conditions.push(or(like(events.name, term), like(events.description, term)));
+}
+
+// Location filter
+if (locationFilter) {
+  const locId = parseInt(locationFilter);
+  if (!isNaN(locId)) conditions.push(eq(events.locationId, locId));
+}
+
+// State filter
+if (stateFilter) {
+  const stId = parseInt(stateFilter);
+  if (!isNaN(stId)) conditions.push(eq(events.willOccur, stId));
+}
+
+// Date range
+if (dateFrom) conditions.push(gte(events.startDate, new Date(dateFrom)));
+if (dateTo) conditions.push(lte(events.startDate, new Date(dateTo + 'T23:59:59')));
+
+const whereClause = conditions.length > 0 ? and(...conditions) : sql`true`;
+
+// Count total
+const countResult = await db
+  .select({ count: sql<number>`count(*)::int` })
+  .from(events)
+  .innerJoin(locations, eq(events.locationId, locations.id))
+  .where(whereClause);
+const total = countResult[0].count;
+const totalPages = Math.ceil(total / limit);
+
+// Determine sort column mapping
+const sortExpr =
+  sortCol === 'name' ? events.name :
+  sortCol === 'location' ? locations.name :
+  events.startDate;
+
+const orderByFn = sortDir === 'desc' ? desc : asc;
+
+// Fetch events
+const rawEvents = await db
+  .select({
+    id: events.id,
+    name: events.name,
+    description: events.description,
+    startDate: events.startDate,
+    endDate: events.endDate,
+    maxGuests: events.maxGuests,
+    maxWorkers: events.maxWorkers,
+    locationName: locations.name,
+    willOccur: events.willOccur,
+    locked: events.locked,
+    givesPoints: events.givesPoints,
+  })
+  .from(events)
+  .innerJoin(locations, eq(events.locationId, locations.id))
+  .where(whereClause)
+  .orderBy(orderByFn(sortExpr))
+  .limit(limit)
+  .offset(offset);
+
+// Get counts
+const eventsWithCounts = await Promise.all(
+  rawEvents.map(async (event) => {
+    const [wc] = await db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(workerRegistrations)
+      .where(eq(workerRegistrations.eventId, event.id));
+    const [gc] = await db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(guestRegistrations)
+      .where(eq(guestRegistrations.eventId, event.id));
+    return { ...event, currentWorkers: wc.count, currentGuests: gc.count };
+  })
+);
+
+// Fetch all events for calendar view (no pagination)
+let calendarEvents: typeof rawEvents = [];
+if (view === 'calendar') {
+  calendarEvents = await db
+    .select({
+      id: events.id,
+      name: events.name,
+      description: events.description,
+      startDate: events.startDate,
+      endDate: events.endDate,
+      maxGuests: events.maxGuests,
+      maxWorkers: events.maxWorkers,
+      locationName: locations.name,
+      willOccur: events.willOccur,
+      locked: events.locked,
+      givesPoints: events.givesPoints,
+    })
+    .from(events)
+    .innerJoin(locations, eq(events.locationId, locations.id))
+    .where(whereClause)
+    .orderBy(asc(events.startDate));
+}
+
+// Build URL helper preserving all params
+function buildUrl(overrides: Record<string, string> = {}): string {
+  const params = new URLSearchParams();
+  const newFilter = overrides.filter ?? filter;
+  const newDefaultDir = newFilter === 'past' ? 'desc' : 'asc';
+  const current: Record<string, string> = { filter, sort: sortParam, dir: sortDir, view };
+  if (search) current.search = search;
+  if (locationFilter) current.location = locationFilter;
+  if (stateFilter) current.state = stateFilter;
+  if (dateFrom) current.dateFrom = dateFrom;
+  if (dateTo) current.dateTo = dateTo;
+  if (page > 1) current.page = String(page);
+  Object.assign(current, overrides);
+  // Reset sort direction to default when switching filters
+  if (overrides.filter && overrides.filter !== filter) {
+    current.dir = newDefaultDir;
+  }
+  if (current.page === '1') delete current.page;
+  for (const [k, v] of Object.entries(current)) {
+    if (v) params.set(k, v);
+  }
+  return `/event/list?${params.toString()}`;
+}
+
+function sortUrl(col: string): string {
+  const newDir = (sortParam === col && sortDir === 'asc') ? 'desc' : 'asc';
+  return buildUrl({ sort: col, dir: newDir, page: '1' });
+}
+
+// State labels
+function getStateLabel(willOccur: number | undefined, startDate?: Date, endDate?: Date): { text: string; cls: string } | null {
+  if (willOccur === 1) {
+    const now = new Date();
+    if (startDate && endDate) {
+      if (startDate > now) return { text: t('event.stateUpcoming'), cls: 'bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300' };
+      if (endDate >= now) return { text: t('event.stateOngoing'), cls: 'bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300' };
+      return { text: t('event.stateHappened'), cls: 'bg-gray-100 text-gray-500 dark:bg-gray-700 dark:text-gray-400' };
+    }
+    return { text: t('event.stateUpcoming'), cls: 'bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300' };
+  }
+  if (willOccur === 2) return { text: t('event.stateNo'), cls: 'bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-300' };
+  if (willOccur === 3) return { text: t('event.stateMaybe'), cls: 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900 dark:text-yellow-300' };
+  return null;
+}
+
+const hasActiveFilters = search || locationFilter || stateFilter || dateFrom || dateTo;
+---
+
+<BaseLayout title={t('event.events')}>
+  <div class="space-y-6">
+    <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+      <h1 class="text-2xl font-bold text-gray-900 dark:text-white">
+        {t('event.events')}
+      </h1>
+
+      <div class="flex items-center gap-3">
+        <!-- View toggle -->
+        <div class="flex rounded-md border border-gray-200 dark:border-gray-700 overflow-hidden">
+          <a
+            href={buildUrl({ view: 'table' })}
+            class:list={[
+              'px-3 py-2 text-sm transition-colors',
+              view === 'table'
+                ? 'bg-gray-100 text-gray-900 dark:bg-gray-700 dark:text-white'
+                : 'bg-white text-gray-500 hover:bg-gray-50 dark:bg-gray-800 dark:text-gray-400 dark:hover:bg-gray-700',
+            ]}
+            title={t('event.tableView')}
+          >
+            <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h18M3 14h18M3 6h18M3 18h18" />
+            </svg>
+          </a>
+          <a
+            href={buildUrl({ view: 'calendar' })}
+            class:list={[
+              'px-3 py-2 text-sm transition-colors border-l border-gray-200 dark:border-gray-700',
+              view === 'calendar'
+                ? 'bg-gray-100 text-gray-900 dark:bg-gray-700 dark:text-white'
+                : 'bg-white text-gray-500 hover:bg-gray-50 dark:bg-gray-800 dark:text-gray-400 dark:hover:bg-gray-700',
+            ]}
+            title={t('event.calendarView')}
+          >
+            <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+            </svg>
+          </a>
+        </div>
+
+        <!-- Filter tabs -->
+        <div class="flex rounded-md border border-gray-200 dark:border-gray-700 overflow-hidden">
+          <a
+            href={buildUrl({ filter: 'upcoming', page: '1' })}
+            class:list={[
+              'px-4 py-2 text-sm font-medium transition-colors',
+              filter === 'upcoming'
+                ? 'bg-blue-600 text-white'
+                : 'bg-white text-gray-600 hover:bg-gray-50 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700',
+            ]}
+          >
+            {t('event.upcoming')}
+          </a>
+          <a
+            href={buildUrl({ filter: 'past', page: '1' })}
+            class:list={[
+              'px-4 py-2 text-sm font-medium transition-colors border-l border-gray-200 dark:border-gray-700',
+              filter === 'past'
+                ? 'bg-blue-600 text-white'
+                : 'bg-white text-gray-600 hover:bg-gray-50 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700',
+            ]}
+          >
+            {t('event.past')}
+          </a>
+          <a
+            href={buildUrl({ filter: 'all', page: '1' })}
+            class:list={[
+              'px-4 py-2 text-sm font-medium transition-colors border-l border-gray-200 dark:border-gray-700',
+              filter === 'all'
+                ? 'bg-blue-600 text-white'
+                : 'bg-white text-gray-600 hover:bg-gray-50 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700',
+            ]}
+          >
+            {t('event.all')}
+          </a>
+        </div>
+        {currentUser && isAdmin(currentUser.role) && (
+          <a href="/event/create" class="px-4 py-2 rounded-md text-sm font-medium bg-blue-600 text-white hover:bg-blue-700 transition-colors shrink-0">
+            + {t('event.createEvent')}
+          </a>
+        )}
+      </div>
+    </div>
+
+    <!-- Filters -->
+    <details open={hasActiveFilters} class="group">
+      <summary class="flex items-center gap-2 px-4 py-2 bg-white dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-800 cursor-pointer text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors">
+        <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
+        </svg>
+        {t('event.filters')}
+        {hasActiveFilters && (
+          <span class="ml-auto text-xs bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300 px-2 py-0.5 rounded-full">Active</span>
+        )}
+      </summary>
+      <form method="get" action="/event/list" class="mt-2 p-4 bg-white dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-800">
+        <input type="hidden" name="filter" value={filter} />
+        <input type="hidden" name="sort" value={sortParam} />
+        <input type="hidden" name="dir" value={sortDir} />
+        <input type="hidden" name="view" value={view} />
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
+          <div>
+            <input
+              type="text"
+              name="search"
+              value={search}
+              placeholder={t('event.searchPlaceholder')}
+              class="w-full px-3 py-2 text-sm rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white placeholder-gray-400 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            />
+          </div>
+          <div>
+            <select name="location" class="w-full px-3 py-2 text-sm rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+              <option value="">{t('event.filterByLocation')}: All</option>
+              {allLocations.map((loc) => (
+                <option value={loc.id} selected={locationFilter === String(loc.id)}>{loc.name}</option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <select name="state" class="w-full px-3 py-2 text-sm rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+              <option value="">{t('event.filterByState')}: All</option>
+              {allEventStates.map((st) => (
+                <option value={st.id} selected={stateFilter === String(st.id)}>{st.name}</option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <input
+              type="date"
+              name="dateFrom"
+              value={dateFrom}
+              placeholder={t('event.dateFrom')}
+              class="w-full px-3 py-2 text-sm rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            />
+          </div>
+          <div>
+            <input
+              type="date"
+              name="dateTo"
+              value={dateTo}
+              placeholder={t('event.dateTo')}
+              class="w-full px-3 py-2 text-sm rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            />
+          </div>
+        </div>
+        <div class="flex items-center gap-3 mt-3">
+          <button type="submit" class="px-4 py-2 text-sm font-medium rounded-md bg-blue-600 text-white hover:bg-blue-700 transition-colors">
+            {t('event.filters')}
+          </button>
+          {hasActiveFilters && (
+            <a href={buildUrl({ search: '', location: '', state: '', dateFrom: '', dateTo: '', page: '1' })} class="text-sm text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 transition-colors">
+              {t('event.clearFilters')}
+            </a>
+          )}
+        </div>
+      </form>
+    </details>
+
+    {view === 'calendar' ? (
+      <EventCalendar
+        client:load
+        events={calendarEvents.map((e) => ({
+          id: e.id,
+          name: e.name,
+          startDate: e.startDate instanceof Date ? e.startDate.toISOString() : String(e.startDate),
+          endDate: e.endDate instanceof Date ? e.endDate.toISOString() : String(e.endDate),
+          locationName: e.locationName,
+          willOccur: e.willOccur ?? 1,
+        }))}
+        lang={lang}
+      />
+    ) : eventsWithCounts.length === 0 ? (
+      <div class="text-center py-12 bg-white dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-800">
+        <p class="text-gray-500 dark:text-gray-400">{hasActiveFilters ? t('event.noResults') : t('event.noEvents')}</p>
+      </div>
+    ) : (
+      <div class="bg-white dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-800 overflow-hidden">
+        <div class="overflow-x-auto">
+          <table class="w-full text-sm">
+            <thead>
+              <tr class="bg-gray-50 dark:bg-gray-800/50 border-b border-gray-200 dark:border-gray-700">
+                <th class="text-left px-4 py-3 font-medium text-gray-700 dark:text-gray-300">
+                  <a href={sortUrl('name')} class="inline-flex items-center gap-1 hover:text-blue-600 dark:hover:text-blue-400">
+                    {t('event.name')}
+                    {sortParam === 'name' && (sortDir === 'asc' ? '▲' : '▼')}
+                  </a>
+                </th>
+                <th class="text-left px-4 py-3 font-medium text-gray-700 dark:text-gray-300">
+                  <a href={sortUrl('startDate')} class="inline-flex items-center gap-1 hover:text-blue-600 dark:hover:text-blue-400">
+                    {t('event.startDate')}
+                    {sortParam === 'startDate' && (sortDir === 'asc' ? '▲' : '▼')}
+                  </a>
+                </th>
+                <th class="text-left px-4 py-3 font-medium text-gray-700 dark:text-gray-300">
+                  <a href={sortUrl('location')} class="inline-flex items-center gap-1 hover:text-blue-600 dark:hover:text-blue-400">
+                    {t('event.location')}
+                    {sortParam === 'location' && (sortDir === 'asc' ? '▲' : '▼')}
+                  </a>
+                </th>
+                <th class="text-left px-4 py-3 font-medium text-gray-700 dark:text-gray-300">{t('event.state')}</th>
+                <th class="text-left px-4 py-3 font-medium text-gray-700 dark:text-gray-300">{t('event.workers')}</th>
+                <th class="text-left px-4 py-3 font-medium text-gray-700 dark:text-gray-300">{t('event.guests')}</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-gray-100 dark:divide-gray-800">
+              {eventsWithCounts.map((event) => {
+                const state = getStateLabel(event.willOccur, new Date(event.startDate), new Date(event.endDate));
+                const workerCount = event.currentWorkers ?? 0;
+                const isFull = event.maxWorkers !== null && workerCount >= event.maxWorkers;
+                return (
+                  <tr class="hover:bg-gray-50 dark:hover:bg-gray-800/50 cursor-pointer" data-action="open-event" data-event-id={event.id}>
+                    <td class="px-4 py-3">
+                      <div class="flex items-center gap-2">
+                        <span class="font-medium text-gray-900 dark:text-white">{event.name}</span>
+                        {event.locked && (
+                          <span class="text-xs px-1.5 py-0.5 rounded bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400">{t('event.locked')}</span>
+                        )}
+                      </div>
+                    </td>
+                    <td class="px-4 py-3 text-gray-600 dark:text-gray-400 whitespace-nowrap">
+                      {new Date(event.startDate).toLocaleDateString(lang, { month: 'short', day: 'numeric' })}
+                      {' '}
+                      {new Date(event.startDate).toLocaleTimeString(lang, { hour: '2-digit', minute: '2-digit' })}
+                    </td>
+                    <td class="px-4 py-3 text-gray-600 dark:text-gray-400">
+                      {event.locationName}
+                    </td>
+                    <td class="px-4 py-3">
+                      {state && (
+                        <span class={`text-xs font-medium px-2 py-0.5 rounded-full ${state.cls}`}>
+                          {state.text}
+                        </span>
+                      )}
+                    </td>
+                    <td class="px-4 py-3">
+                      <span class:list={['text-gray-600 dark:text-gray-400', isFull && 'text-orange-500 dark:text-orange-400 font-medium']}>
+                        {workerCount}{event.maxWorkers !== null ? `/${event.maxWorkers}` : ''}
+                        {isFull && ` (${t('event.full')})`}
+                      </span>
+                    </td>
+                    <td class="px-4 py-3 text-gray-600 dark:text-gray-400">
+                      {event.currentGuests ?? 0}{event.maxGuests !== null ? `/${event.maxGuests}` : ''}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    )}
+
+    <!-- Pagination -->
+    {view !== 'calendar' && totalPages > 1 && (
+      <nav class="flex justify-center items-center gap-2 pt-4" aria-label="Pagination">
+        {page > 1 && (
+          <a
+            href={buildUrl({ page: String(page - 1) })}
+            class="px-3 py-2 rounded-md text-sm font-medium text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800 transition-colors"
+          >
+            &larr; {t('common.back')}
+          </a>
+        )}
+        <span class="text-sm text-gray-500 dark:text-gray-400">
+          {page} / {totalPages}
+        </span>
+        {page < totalPages && (
+          <a
+            href={buildUrl({ page: String(page + 1) })}
+            class="px-3 py-2 rounded-md text-sm font-medium text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800 transition-colors"
+          >
+            &rarr;
+          </a>
+        )}
+      </nav>
+    )}
+  </div>
+</BaseLayout>
