@@ -4,6 +4,7 @@ import { and, eq, sql } from "drizzle-orm";
 import { Elysia, t } from "elysia";
 import { db } from "../../db";
 import { pubTeamMembers, pubTeams, users } from "../../db/schema";
+import { sanitizeTeamColor } from "../../lib/teamColor";
 import { MAX_FILE_SIZE, processAndStoreImage } from "../../lib/uploads";
 import { recordAdminAction } from "../../services/auditLog";
 import { generateJoinCode } from "../../utils/joinCode";
@@ -239,12 +240,28 @@ export const teamRoutes = new Elysia()
                         }
                     }
 
+                    const sanitizedColor =
+                        body.teamColor === undefined
+                            ? null
+                            : sanitizeTeamColor(body.teamColor);
+                    if (
+                        body.teamColor !== undefined &&
+                        body.teamColor !== null &&
+                        sanitizedColor === null
+                    ) {
+                        throw new AppError(
+                            "teamColor must be a #rgb or #rrggbb hex color",
+                            400,
+                            "INVALID_TEAM_COLOR",
+                        );
+                    }
+
                     const [team] = await db
                         .insert(pubTeams)
                         .values({
                             name: body.name,
                             description: body.description ?? null,
-                            teamColor: body.teamColor ?? null,
+                            teamColor: sanitizedColor,
                             teamPic: body.teamPic ?? null,
                             joinCode: generateJoinCode(),
                             createdBy: user.id,
@@ -312,8 +329,17 @@ export const teamRoutes = new Elysia()
                     if (body.name !== undefined) updateData.name = body.name;
                     if (body.description !== undefined)
                         updateData.description = body.description;
-                    if (body.teamColor !== undefined)
-                        updateData.teamColor = body.teamColor;
+                    if (body.teamColor !== undefined) {
+                        const sanitized = sanitizeTeamColor(body.teamColor);
+                        if (body.teamColor !== null && sanitized === null) {
+                            throw new AppError(
+                                "teamColor must be a #rgb or #rrggbb hex color",
+                                400,
+                                "INVALID_TEAM_COLOR",
+                            );
+                        }
+                        updateData.teamColor = sanitized;
+                    }
                     if (body.teamPic !== undefined)
                         updateData.teamPic = body.teamPic;
 

@@ -3,12 +3,17 @@
 import BaseLayout from '../../layouts/BaseLayout.astro';
 import { getTeamScoreboard } from '../../services/teamScoring';
 import { isAdmin } from '../../api/middleware/auth';
+import { teamColorClass, teamColorStyleContent } from '../../lib/teamColor';
+import { sha256StyleHash } from '../../lib/csp';
 
 const t = Astro.locals.t;
 const currentUser = Astro.locals.user;
 
 const allTeams = await getTeamScoreboard();
 const topTeams = allTeams.slice(0, 5);
+
+const teamColorsCss = teamColorStyleContent(allTeams.map((t) => t.teamColor));
+if (teamColorsCss) Astro.csp?.insertStyleHash(sha256StyleHash(teamColorsCss));
 ---
 
 <BaseLayout title={t('team.title')}>
@@ -41,7 +46,7 @@ const topTeams = allTeams.slice(0, 5);
               {team.teamPic ? (
                 <img src={team.teamPic} alt={team.name} class="w-10 h-10 rounded-full object-cover shrink-0" />
               ) : team.teamColor ? (
-                <span class="w-10 h-10 rounded-full shrink-0 border-2 border-white dark:border-gray-700 shadow-sm" style={`background-color: ${team.teamColor}`}></span>
+                <span class={`w-10 h-10 rounded-full shrink-0 border-2 border-white dark:border-gray-700 shadow-sm ${teamColorClass(team.teamColor)}`}></span>
               ) : (
                 <span class="w-10 h-10 rounded-full shrink-0 bg-gray-200 dark:bg-gray-700 flex items-center justify-center text-sm font-bold text-gray-500 dark:text-gray-400">
                   {team.name[0].toUpperCase()}
@@ -83,7 +88,7 @@ const topTeams = allTeams.slice(0, 5);
                 {team.teamPic ? (
                   <img src={team.teamPic} alt={team.name} class="w-10 h-10 rounded-full object-cover shrink-0" />
                 ) : team.teamColor ? (
-                  <span class="w-10 h-10 rounded-full shrink-0 border-2 border-white dark:border-gray-800 shadow-sm" style={`background-color: ${team.teamColor}`}></span>
+                  <span class={`w-10 h-10 rounded-full shrink-0 border-2 border-white dark:border-gray-800 shadow-sm ${teamColorClass(team.teamColor)}`}></span>
                 ) : (
                   <span class="w-10 h-10 rounded-full shrink-0 bg-gray-200 dark:bg-gray-700 flex items-center justify-center text-sm font-bold text-gray-500 dark:text-gray-400">
                     {team.name[0].toUpperCase()}
@@ -121,3 +126,5 @@ const topTeams = allTeams.slice(0, 5);
     )}
   </div>
 </BaseLayout>
+
+{teamColorsCss && <style is:inline set:html={teamColorsCss}></style>}

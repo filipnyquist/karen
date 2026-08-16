@@ -12,6 +12,8 @@ import {
 import { eq, and, desc, sql, lte } from 'drizzle-orm';
 import { anonymizeName } from '../../utils/anonymize';
 import { isSuperadmin } from '../../api/middleware/auth';
+import { teamColorStyleContent } from '../../lib/teamColor';
+import { sha256StyleHash } from '../../lib/csp';
 
 const t = Astro.locals.t;
 const lang = Astro.locals.lang ?? 'sv';
@@ -144,6 +146,14 @@ const teams = await db
 
 const isOwnProfile = currentUser && currentUser.id === profileId;
 const isMrMime = profileUser.nickname?.trim() === 'Mr.Mime';
+
+// `<style is:inline>` block for team color classes used on this page.
+// Astro 7 hashes these blocks via `Astro.csp?.insertStyleHash()` —
+// the only CSP-approved way to emit dynamic styles without resorting
+// to inline `style=""` attributes (which CSP blocks without
+// 'unsafe-hashes').
+const teamColorsCss = teamColorStyleContent(teams.map((t) => t.teamColor));
+if (teamColorsCss) Astro.csp?.insertStyleHash(sha256StyleHash(teamColorsCss));
 ---
 
 <BaseLayout title={profileUser.nickname || profileUser.name || t('profile.title')}>
@@ -366,3 +376,5 @@ const isMrMime = profileUser.nickname?.trim() === 'Mr.Mime';
     }
   }
 </style>
+
+{teamColorsCss && <style is:inline set:html={teamColorsCss}></style>}

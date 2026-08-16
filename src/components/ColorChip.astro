@@ -2,8 +2,14 @@
 // src/components/ColorChip.astro
 //
 // A small colored circle used to represent team color.
-// Uses an inline CSS custom property so the color value isn't interpolated
-// into a CSS property that browsers will accept arbitrary values for.
+//
+// The color value is rendered as a class name (see `teamColorClass`),
+// not as an inline `style=""` attribute — the project's CSP blocks
+// inline style attributes without 'unsafe-hashes'. Parent pages that
+// use this component are responsible for emitting a `<style>` block
+// defining the class (see `teamColorStyleContent`).
+
+import { sanitizeTeamColor, teamColorClass } from "../lib/teamColor";
 
 interface Props {
     color: string | null;
@@ -18,16 +24,18 @@ const sizeClasses = {
     sm: "w-3 h-3",
     md: "w-4 h-4",
 }[size];
+
+const sanitized = sanitizeTeamColor(color);
 ---
 
-{color ? (
+{sanitized ? (
     <span
         class:list={[
             "rounded-full inline-block shrink-0",
+            teamColorClass(sanitized),
             sizeClasses,
             className,
         ]}
-        style={`background-color: ${color}`}
         aria-hidden="true"
     />
 ) : (
