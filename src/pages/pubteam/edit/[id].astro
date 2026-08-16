@@ -8,6 +8,8 @@ import { eq, and } from 'drizzle-orm';
 import { flattenTranslations } from '../../../i18n';
 import { sha256ScriptHash } from '../../../lib/csp';
 import { isAdmin } from '../../../api/middleware/auth';
+import { teamColorStyleContent } from '../../../lib/teamColor';
+import { sha256StyleHash } from '../../../lib/csp';
 import { requireAuth } from '../../../lib/guards';
 
 const t = Astro.locals.t;
@@ -77,6 +79,9 @@ const editTeamScript = `(function(){
 })();`;
 
 Astro.csp?.insertScriptHash(sha256ScriptHash(editTeamScript));
+
+const teamColorsCss = teamColorStyleContent([team.teamColor]);
+if (teamColorsCss) Astro.csp?.insertStyleHash(sha256StyleHash(teamColorsCss));
 ---
 
 <BaseLayout title={t('team.editTeam')}>
@@ -149,3 +154,5 @@ Astro.csp?.insertScriptHash(sha256ScriptHash(editTeamScript));
 
   <script is:inline set:html={editTeamScript}></script>
 </BaseLayout>
+
+{teamColorsCss && <style is:inline set:html={teamColorsCss}></style>}

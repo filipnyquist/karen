@@ -9,6 +9,8 @@ import { anonymizeName } from '../../utils/anonymize';
 import { getTeamPoints } from '../../services/teamScoring';
 import { sha256ScriptHash } from '../../lib/csp';
 import { isAdmin } from '../../api/middleware/auth';
+import { teamColorClass, teamColorStyleContent } from '../../lib/teamColor';
+import { sha256StyleHash } from '../../lib/csp';
 
 const t = Astro.locals.t;
 const lang = Astro.locals.lang ?? 'sv';
@@ -56,6 +58,9 @@ const isTeamAdmin = currentUser
   : false;
 const memberCount = members.length;
 const teamPoints = await getTeamPoints(teamId);
+
+const teamColorsCss = teamColorStyleContent([team.teamColor]);
+if (teamColorsCss) Astro.csp?.insertStyleHash(sha256StyleHash(teamColorsCss));
 
 // Inline team-action handler. Built in the frontmatter so the SHA-256 we
 // register matches the literal HTML that goes out.
@@ -203,8 +208,7 @@ Astro.csp?.insertScriptHash(sha256ScriptHash(teamScript));
           <img src={team.teamPic} alt={team.name} class="w-14 h-14 rounded-full object-cover shrink-0" />
         ) : team.teamColor ? (
           <span
-            class="w-14 h-14 rounded-full shrink-0 border-2 border-white dark:border-gray-800 shadow-sm"
-            style={`background-color: ${team.teamColor}`}
+            class={`w-14 h-14 rounded-full shrink-0 border-2 border-white dark:border-gray-800 shadow-sm ${teamColorClass(team.teamColor)}`}
           ></span>
         ) : (
           <span class="w-14 h-14 rounded-full shrink-0 bg-gray-200 dark:bg-gray-700 flex items-center justify-center text-xl font-bold text-gray-500 dark:text-gray-400">
@@ -380,3 +384,5 @@ Astro.csp?.insertScriptHash(sha256ScriptHash(teamScript));
 
   <script is:inline set:html={teamScript}></script>
 </BaseLayout>
+
+{teamColorsCss && <style is:inline set:html={teamColorsCss}></style>}

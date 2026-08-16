@@ -1,5 +1,6 @@
 // src/islands/TeamPictureUploader.tsx
 import { useRef, useState } from "preact/hooks";
+import { sanitizeTeamColor, teamColorClass } from "../lib/teamColor";
 
 interface TeamPictureUploaderProps {
     teamId: string;
@@ -18,6 +19,7 @@ export default function TeamPictureUploader({
 }: TeamPictureUploaderProps) {
     const [picUrl, setPicUrl] = useState(currentPic || "");
     const [uploading, setUploading] = useState(false);
+    const sanitizedColor = sanitizeTeamColor(teamColor);
     const [error, setError] = useState("");
     const [success, setSuccess] = useState("");
     const fileRef = useRef<HTMLInputElement>(null);
@@ -79,10 +81,9 @@ export default function TeamPictureUploader({
                         alt={teamName}
                         class="w-16 h-16 rounded-full object-cover shrink-0"
                     />
-                ) : teamColor ? (
+                ) : sanitizedColor ? (
                     <span
-                        class="w-16 h-16 rounded-full shrink-0 border-2 border-white dark:border-gray-700 shadow-sm"
-                        style={`background-color: ${teamColor}`}
+                        class={`w-16 h-16 rounded-full shrink-0 border-2 border-white dark:border-gray-700 shadow-sm ${teamColorClass(sanitizedColor)}`}
                     />
                 ) : (
                     <span class="w-16 h-16 rounded-full shrink-0 bg-gray-200 dark:bg-gray-700 flex items-center justify-center text-2xl font-bold text-gray-500 dark:text-gray-400">
