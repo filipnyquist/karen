@@ -22,6 +22,7 @@ const rows = await db
         id: locations.id,
         name: locations.name,
         description: locations.description,
+        active: locations.active,
     })
     .from(locations)
     .orderBy(locations.name);

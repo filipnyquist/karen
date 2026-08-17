@@ -479,9 +479,6 @@ export default function AdminUserModal({
                                         <option value="user">
                                             {t["admin.roleUser"] || "User"}
                                         </option>
-                                        <option value="responsible">
-                                            Responsible
-                                        </option>
                                         <option value="admin">
                                             {t["admin.roleAdmin"] || "Admin"}
                                         </option>

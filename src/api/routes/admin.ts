@@ -26,6 +26,11 @@ import { exportRoutes } from "./exports";
 const locationBody = t.Object({
     name: t.String({ minLength: 1, maxLength: 100 }),
     description: t.Optional(t.String({ maxLength: 500 })),
+    // `active` gates the public picker (`getEventById` /
+    // `listEvents` / `getEventById` still joins freely, so existing
+    // events keep showing their location name). Defaults to true on
+    // POST; on PUT it's only updated when the field is present.
+    active: t.Optional(t.Boolean()),
 });
 const educationTypeBody = t.Object({
     name: t.String({ minLength: 1, maxLength: 100 }),
@@ -64,15 +69,21 @@ function isPgErrorWithCode(err: unknown, code: string): boolean {
     return false;
 }
 
-// Superadmin-only CRUD for the small "system reference data" tables
-// (locations and education_types). Strictly above admin: these define
-// the lookup lists the rest of the app hardcodes into dropdowns, so
-// mistakes are immediately visible. Mounted from adminRoutes so the
-// combined URL is /api/admin/reference-data/...
-export const referenceDataRoutes = new Elysia({ prefix: "/reference-data" })
+// Reference-data lookup tables. Locations stay superadmin-only (the
+// `active` toggle on locations affects what shows up in event
+// creation — a heavy foot-gun). Education-types are relaxable to
+// admin: the lookup lists are derived data the rest of the app reads
+// from but the names are stable enough for an admin to manage
+// safely. Each table is mounted as its own Elysia instance so the
+// `derive` chain can set the right tier per table.
+export const locationReferenceRoutes = new Elysia({
+    prefix: "/reference-data",
+})
     .derive(superadminDerive)
-    // ─── locations ───
     .get("/locations", async () => {
+        // GET stays unfiltered so superadmins can re-activate
+        // retired locations. The public picker filters on
+        // `locations.active`; see src/api/index.ts.
         return db.select().from(locations).orderBy(locations.name);
     })
     .post(
@@ -80,10 +91,11 @@ export const referenceDataRoutes = new Elysia({ prefix: "/reference-data" })
         async ({ body, user: actor }) => {
             const name = body.name.trim();
             const description = body.description?.trim() || null;
+            const active = body.active ?? true;
             try {
                 const [row] = await db
                     .insert(locations)
-                    .values({ name, description })
+                    .values({ name, description, active })
                     .returning();
                 await recordAdminAction(
                     actor.id,
@@ -126,10 +138,17 @@ export const referenceDataRoutes = new Elysia({ prefix: "/reference-data" })
             }
             const name = body.name.trim();
             const description = body.description?.trim() || null;
+            const setValues: Partial<typeof locations.$inferInsert> = {
+                name,
+                description,
+            };
+            if (body.active !== undefined) {
+                setValues.active = body.active;
+            }
             try {
                 const [row] = await db
                     .update(locations)
-                    .set({ name, description })
+                    .set(setValues)
                     .where(eq(locations.id, id))
                     .returning();
                 await recordAdminAction(
@@ -192,8 +211,12 @@ export const referenceDataRoutes = new Elysia({ prefix: "/reference-data" })
             return { success: true };
         },
         { params: idParams },
-    )
-    // ─── education types ───
+    );
+
+export const educationTypeReferenceRoutes = new Elysia({
+    prefix: "/reference-data",
+})
+    .derive(adminDerive)
     .get("/education-types", async () => {
         return db.select().from(educationTypes).orderBy(educationTypes.name);
     })
@@ -347,7 +370,8 @@ export const referenceDataRoutes = new Elysia({ prefix: "/reference-data" })
 export const adminRoutes = new Elysia({ prefix: "/admin" })
     .derive(adminDerive)
     .use(exportRoutes)
-    .use(referenceDataRoutes)
+    .use(locationReferenceRoutes)
+    .use(educationTypeReferenceRoutes)
     .post(
         "/verify",
         async ({ body, user: actor }) => {
@@ -793,7 +817,6 @@ export const adminRoutes = new Elysia({ prefix: "/admin" })
                 role: t.Optional(
                     t.Union([
                         t.Literal("user"),
-                        t.Literal("responsible"),
                         t.Literal("admin"),
                         t.Literal("superadmin"),
                     ]),

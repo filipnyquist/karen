@@ -14,7 +14,12 @@ interface BaseRow {
     description: string | null;
 }
 
-interface LocationRow extends BaseRow {}
+interface LocationRow extends BaseRow {
+    // Gates the public picker; toggled by the locations admin modal.
+    // See `src/api/index.ts` (GET /api/locations) and
+    // `src/services/events.ts` (`createEvent`) for the filter.
+    active: boolean;
+}
 
 interface EducationTypeRow extends BaseRow {
     validityMonths: number | null;
@@ -45,6 +50,7 @@ const EMPTY_LOCATION: LocationRow = {
     id: 0,
     name: "",
     description: null,
+    active: true,
 };
 
 const EMPTY_EDUCATION_TYPE: EducationTypeRow = {
@@ -146,6 +152,7 @@ export default function ReferenceDataTable({
                     ? {
                           name: trimmedName,
                           description: current.description || undefined,
+                          active: (current as LocationRow).active,
                       }
                     : {
                           name: trimmedName,
@@ -281,6 +288,11 @@ export default function ReferenceDataTable({
                                     {t["admin.table.description"] ||
                                         "Description"}
                                 </th>
+                                {isLocation && (
+                                    <th class="px-4 py-3 text-left font-medium text-gray-500 dark:text-gray-400">
+                                        {t["admin.table.active"] || "Active"}
+                                    </th>
+                                )}
                                 {!isLocation && (
                                     <th class="px-4 py-3 text-left font-medium text-gray-500 dark:text-gray-400">
                                         {t["admin.table.validityMonths"] ||
@@ -296,7 +308,7 @@ export default function ReferenceDataTable({
                             {filteredRows.length === 0 ? (
                                 <tr>
                                     <td
-                                        colSpan={isLocation ? 3 : 4}
+                                        colSpan={isLocation ? 4 : 4}
                                         class="px-4 py-8 text-center text-gray-400"
                                     >
                                         {t["admin.table.empty"] || "No rows"}
@@ -315,6 +327,33 @@ export default function ReferenceDataTable({
                                         <td class="px-4 py-2.5 text-gray-700 dark:text-gray-300">
                                             {row.description || "-"}
                                         </td>
+                                        {isLocation && (
+                                            <td class="px-4 py-2.5 text-gray-700 dark:text-gray-300">
+                                                <span
+                                                    class={`inline-flex items-center gap-1.5 text-xs font-medium ${
+                                                        (row as LocationRow)
+                                                            .active
+                                                            ? "text-green-700 dark:text-green-400"
+                                                            : "text-gray-400 dark:text-gray-500"
+                                                    }`}
+                                                >
+                                                    <span
+                                                        class={`inline-block h-2 w-2 rounded-full ${
+                                                            (row as LocationRow)
+                                                                .active
+                                                                ? "bg-green-500"
+                                                                : "bg-gray-300 dark:bg-gray-600"
+                                                        }`}
+                                                    />
+                                                    {(row as LocationRow).active
+                                                        ? t[
+                                                              "admin.activeYes"
+                                                          ] || "Yes"
+                                                        : t["admin.activeNo"] ||
+                                                          "Hidden"}
+                                                </span>
+                                            </td>
+                                        )}
                                         {!isLocation && (
                                             <td class="px-4 py-2.5 text-gray-700 dark:text-gray-300">
                                                 {(row as EducationTypeRow)
@@ -453,6 +492,39 @@ export default function ReferenceDataTable({
                                     class="w-full rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white px-2 py-1.5 text-sm"
                                 />
                             </label>
+
+                            {/* `active` checkbox for locations: when
+                                unchecked, hides the row from the public
+                                event-creation picker. Defaults to true on
+                                create; PUT only flips when the field is
+                                touched so a quick name-edit doesn't
+                                accidentally unlist a location. */}
+                            {isLocation && (
+                                <label class="flex items-center gap-2 text-sm">
+                                    <input
+                                        type="checkbox"
+                                        checked={
+                                            (current as LocationRow).active
+                                        }
+                                        onChange={(e) =>
+                                            setModal({
+                                                ...modal,
+                                                row: {
+                                                    ...current,
+                                                    active: (
+                                                        e.target as HTMLInputElement
+                                                    ).checked,
+                                                } as LocationRow,
+                                            })
+                                        }
+                                        class="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-800"
+                                    />
+                                    <span>
+                                        {t["admin.locations.activeLabel"] ||
+                                            "Active in picker"}
+                                    </span>
+                                </label>
+                            )}
 
                             {!isLocation && (
                                 <label class="block text-sm">

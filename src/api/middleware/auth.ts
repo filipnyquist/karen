@@ -14,7 +14,10 @@ import { detectLanguage, t } from "../../i18n";
 import { extractSessionToken } from "../../utils/cookies";
 import { AppError } from "./error";
 
-export type Role = "user" | "responsible" | "admin" | "superadmin";
+// Note: a historical `'responsible'` value was removed. The privilege
+// to "be responsible" at an event is education-derived — see
+// `assertCanRegisterAsResponsible` in `src/services/responsible-education.ts`.
+export type Role = "user" | "admin" | "superadmin";
 
 /** True if the role is `admin` OR `superadmin` (superadmin is a superset). */
 export const isAdmin = (r: Role | string | null | undefined): boolean =>

@@ -30,12 +30,16 @@ const bytea = customType<{ data: Buffer; notNull: false }>({
 // `superadmin` is a strict superset of `admin`: a superadmin can do
 // everything an admin can, plus invite users with a chosen role,
 // change other users' roles (including admins/superadmins), and read
-// the audit log. Added at the end so the underlying Postgres `ADD
-// VALUE` migration appends safely (ALTER TYPE ... ADD VALUE cannot
-// be re-ordered retroactively).
+// the audit log.
+//
+// Note: a historical `'responsible'` value lived here. It was always a
+// dead/manual-only tier — the actual "can sign up as responsible at an
+// event" gate is `assertCanRegisterAsResponsible`, which is purely
+// education-derived (see `src/services/responsible-education.ts`).
+// It was removed in favour of deriving the privilege from the
+// `responsible` education row. See migration 0003.
 export const userRoleEnum = pgEnum("user_role", [
     "user",
-    "responsible",
     "admin",
     "superadmin",
 ]);
@@ -148,6 +152,11 @@ export const locations = pgTable("locations", {
     id: serial("id").primaryKey(),
     name: text("name").notNull().unique(),
     description: text("description"),
+    // `active` gates whether the row is offered in the event-creation
+    // location picker (public GET /api/locations + createEvent server
+    // validation). Defaults to true. Existing rows backfill to true on
+    // migration. Superadmin can toggle via the locations admin page.
+    active: boolean("active").notNull().default(true),
 });
 
 export const eventStates = pgTable("event_states", {

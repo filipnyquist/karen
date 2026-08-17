@@ -104,9 +104,8 @@ describe("isAdmin / isSuperadmin predicates", () => {
         expect(isAdmin("superadmin")).toBe(true);
     });
 
-    test("isAdmin rejects user / responsible / null", () => {
+    test("isAdmin rejects user / null / undefined", () => {
         expect(isAdmin("user")).toBe(false);
-        expect(isAdmin("responsible")).toBe(false);
         expect(isAdmin(null)).toBe(false);
         expect(isAdmin(undefined)).toBe(false);
     });
@@ -143,15 +142,6 @@ describe("adminDerive", () => {
 
     test("rejects role=user with 403", async () => {
         loadSessionUserMock.mockImplementation(async () => makeUser("user"));
-        await expect(
-            adminDerive({ request: dummyReq() }),
-        ).rejects.toMatchObject({ statusCode: 403 });
-    });
-
-    test("rejects role=responsible with 403", async () => {
-        loadSessionUserMock.mockImplementation(async () =>
-            makeUser("responsible"),
-        );
         await expect(
             adminDerive({ request: dummyReq() }),
         ).rejects.toMatchObject({ statusCode: 403 });

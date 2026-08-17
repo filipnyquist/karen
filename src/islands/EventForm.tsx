@@ -49,6 +49,32 @@ const emptyForm: FormData = {
     willOccur: "",
 };
 
+// Palette for the segmented "event state" picker. Colours mirror
+// the badges rendered on the event cards (EventCard.astro /
+// EventCalendar). Keep in sync if the badge palette changes.
+const STATE_PALETTE: Record<string, { selected: string; idle: string }> = {
+    yes: {
+        selected:
+            "bg-green-600 text-white border-green-600 dark:bg-green-600 dark:border-green-500",
+        idle: "bg-green-50 text-green-700 border-green-200 hover:bg-green-100 dark:bg-green-900/30 dark:text-green-300 dark:border-green-800 dark:hover:bg-green-900/50",
+    },
+    no: {
+        selected:
+            "bg-red-600 text-white border-red-600 dark:bg-red-600 dark:border-red-500",
+        idle: "bg-red-50 text-red-700 border-red-200 hover:bg-red-100 dark:bg-red-900/30 dark:text-red-300 dark:border-red-800 dark:hover:bg-red-900/50",
+    },
+    maybe: {
+        selected:
+            "bg-yellow-500 text-white border-yellow-500 dark:bg-yellow-500 dark:border-yellow-400",
+        idle: "bg-yellow-50 text-yellow-700 border-yellow-200 hover:bg-yellow-100 dark:bg-yellow-900/30 dark:text-yellow-300 dark:border-yellow-800 dark:hover:bg-yellow-900/50",
+    },
+};
+const DEFAULT_STATE_PALETTE = {
+    selected:
+        "bg-blue-600 text-white border-blue-600 dark:bg-blue-600 dark:border-blue-500",
+    idle: "bg-gray-50 text-gray-700 border-gray-200 hover:bg-gray-100 dark:bg-gray-800 dark:text-gray-300 dark:border-gray-700 dark:hover:bg-gray-700",
+};
+
 export default function EventForm({ eventId, t }: EventFormProps) {
     const isEdit = Boolean(eventId);
     const [form, setForm] = useState<FormData>(emptyForm);
@@ -70,7 +96,30 @@ export default function EventForm({ eventId, t }: EventFormProps) {
                 const stateRes = await fetch("/api/event-states");
                 if (stateRes.ok) {
                     const stateData = await stateRes.json();
-                    setEventStates(stateData.states ?? stateData);
+                    const states = (stateData.states ??
+                        stateData) as EventState[];
+                    setEventStates(states);
+
+                    // On create mode, default to the "yes" state so the
+                    // user doesn't have to interact with the segmented
+                    // picker. EventCard badges still use the short
+                    // "Confirmed" / "Cancelled" / "Tentative" labels
+                    // (see EventCard.astro); the picker has its own
+                    // descriptive copy via `event.stateYesFull` etc.
+                    // Edit mode keeps the loaded value below.
+                    if (!isEdit) {
+                        const yesState = states.find((s) => s.name === "yes");
+                        if (yesState) {
+                            setForm((prev) =>
+                                prev.willOccur === ""
+                                    ? {
+                                          ...prev,
+                                          willOccur: String(yesState.id),
+                                      }
+                                    : prev,
+                            );
+                        }
+                    }
                 }
 
                 if (isEdit && eventId) {
@@ -492,33 +541,66 @@ export default function EventForm({ eventId, t }: EventFormProps) {
                 </legend>
 
                 <div>
-                    <label
-                        for="willOccur"
-                        class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1"
-                    >
-                        {t["event.eventState"] || "Event State"} *
+                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                        {t["event.eventState"] || "Event state"} *
                     </label>
-                    <select
-                        id="willOccur"
-                        required
-                        value={form.willOccur}
-                        onChange={(e) =>
-                            updateField(
-                                "willOccur",
-                                (e.target as HTMLSelectElement).value,
-                            )
-                        }
-                        class="w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white px-4 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    {/* Segmented control: coloured to match the badges on
+                        event cards (yes=green, no=red, maybe=yellow).
+                        On create, "yes" is pre-selected by the default-to-
+                        yes logic above. On edit, the loaded value drives
+                        selection. role=radiogroup + aria-checked make this
+                        accessible without bringing in a `<select>`. */}
+                    <div
+                        role="radiogroup"
+                        aria-label={t["event.eventState"] || "Event state"}
+                        class="flex flex-wrap gap-2"
                     >
-                        <option value="">
-                            {t["event.selectState"] || "Select state..."}
-                        </option>
-                        {eventStates.map((s) => (
-                            <option key={s.id} value={s.id}>
-                                {s.name}
-                            </option>
-                        ))}
-                    </select>
+                        {eventStates.map((s) => {
+                            const isSelected = String(s.id) === form.willOccur;
+                            const palette =
+                                STATE_PALETTE[s.name] ?? DEFAULT_STATE_PALETTE;
+                            const fullLabel =
+                                s.name === "yes"
+                                    ? t["event.stateYesFull"] ||
+                                      "Yes — it will or has happened"
+                                    : s.name === "no"
+                                      ? t["event.stateNoFull"] ||
+                                        "No — it has been cancelled"
+                                      : s.name === "maybe"
+                                        ? t["event.stateMaybeFull"] ||
+                                          "Maybe — TBD"
+                                        : s.name;
+                            // Native <input type="radio"> is the
+                            // canonical accessible segmented-control
+                            // shape; we hide the radio itself with
+                            // `sr-only` and style the adjacent
+                            // `<label>` so it visually IS the button.
+                            // `peer-checked:*` flips the label palette
+                            // when the radio is selected.
+                            return (
+                                <label
+                                    key={s.id}
+                                    class={`cursor-pointer px-4 py-2 rounded-lg border text-sm font-medium transition-colors select-none ${isSelected ? palette.selected : palette.idle}`}
+                                >
+                                    <input
+                                        type="radio"
+                                        name="willOccur"
+                                        value={s.id}
+                                        checked={isSelected}
+                                        onChange={() =>
+                                            updateField(
+                                                "willOccur",
+                                                String(s.id),
+                                            )
+                                        }
+                                        required
+                                        class="sr-only peer"
+                                    />
+                                    {fullLabel}
+                                </label>
+                            );
+                        })}
+                    </div>
                 </div>
 
                 <div class="flex items-center gap-3">

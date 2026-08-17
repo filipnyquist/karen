@@ -69,7 +69,6 @@ export const invitationRoutes = new Elysia({ prefix: "/invitations" })
                     email: t.String({ format: "email" }),
                     role: t.Union([
                         t.Literal("user"),
-                        t.Literal("responsible"),
                         t.Literal("admin"),
                         t.Literal("superadmin"),
                     ]),
