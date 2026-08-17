@@ -1,0 +1,92 @@
+# .github/workflows/release.yml
+#
+# Triggered by pushing a tag matching v* (e.g. v1.4.2). Builds the
+# production Dockerfile and pushes the resulting image to GitHub
+# Container Registry tagged with both the semver version (v-stripped)
+# AND `latest` — so deploys can pin either the immutable version or
+# the rolling pointer.
+#
+# Auth: uses GITHUB_TOKEN with `packages: write`. For private repos
+# this is also sufficient; for public repos it works out of the box
+# without configuring a PAT.
+#
+# Caching: GHA cache backend scoped to `release` so the production
+# Bun dependency install doesn't redo work on every tag push.
+#
+# Manual re-runs: not exposed via workflow_dispatch. If you need to
+# re-publish `:latest` without changing the tag, just re-push the
+# existing tag with `git tag -f vX.Y.Z && git push --force --tags`.
+
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+  packages: write
+
+# Don't cancel a mid-flight release: serialize concurrent :latest
+# pushes so we never publish a half-built image.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: Build and publish image
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      # Derive image tags from the pushed ref. v1.2.3 → 1.2.3.
+      # Also tag as `:latest` so consumers that want the rolling
+      # tag can keep pinning it across releases.
+      - name: Extract image metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository }}
+          tags: |
+            type=semver,pattern={{version}}
+            type=raw,value=latest
+
+      - name: Build and push image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          platforms: linux/amd64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha,scope=release
+          cache-to: type=gha,scope=release,mode=max
+
+      # After the image is published, create a GitHub Release with
+      # auto-generated notes. GitHub groups PRs merged since the
+      # previous tag by label (e.g. "🚀 Features", "🐛 Bug Fixes").
+      # Requires the repo to have at least one previously tagged
+      # release for the comparator — the first tag gets a simple
+      # bullet list of all commits.
+      - name: Create GitHub Release with auto-changelog
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          draft: false
+          fail_on_unmatched_files: false

@@ -1,0 +1,98 @@
+---
+// src/pages/admin/education-grant.astro
+//
+// Admin-tier page for granting one education type to a batch of users.
+// Two tabs (Event / Users) feed the same form. Mirrors the framing of
+// src/pages/admin/education-types.astro; admin-tier guards via
+// requireAdmin (superadmins are a superset via adminDerive on the
+// backend). Bulk-grant logic + endpoint: POST /api/admin/education/bulk.
+
+import BaseLayout from '../../layouts/BaseLayout.astro';
+import BulkEducationGrant from '../../islands/BulkEducationGrant';
+import { db } from '../../db';
+import { educationTypes, events, users } from '../../db/schema';
+import { requireAdmin } from '../../lib/guards';
+import { flattenTranslations } from '../../i18n/index';
+import { desc, eq } from 'drizzle-orm';
+
+const t = Astro.locals.t;
+const guard = requireAdmin(Astro);
+if (guard instanceof Response) return guard;
+
+// SSR-load the lightweight island payload. Workers for the Event
+// tab are fetched on demand from `GET /api/events/:id/workers`
+// (the same endpoint the event detail page uses) — that runs in
+// the island after hydration, so we don't SSR-worker here.
+const eduTypes = await db
+    .select()
+    .from(educationTypes)
+    .orderBy(educationTypes.name);
+
+const eventRows = await db
+    .select({
+        id: events.id,
+        name: events.name,
+        startDate: events.startDate,
+    })
+    .from(events)
+    .orderBy(desc(events.startDate))
+    .limit(200)
+    // Drizzle returns Date objects for `timestamp({ withTimezone: true })`;
+    // the island prop is `string`, so ISO-stringify at the SSR boundary.
+    .then((rows) =>
+        rows.map((r) => ({ ...r, startDate: r.startDate.toISOString() })),
+    );
+
+const allUsers = await db
+    .select({
+        id: users.id,
+        email: users.email,
+        name: users.name,
+        nickname: users.nickname,
+        role: users.role,
+    })
+    .from(users)
+    .where(eq(users.isLegacy, false))
+    .orderBy(users.email);
+
+const translations = flattenTranslations(
+    Astro.locals.translations as unknown as Record<string, unknown>,
+);
+---
+
+<BaseLayout title={t('admin.educationGrant.title')}>
+    <div class="space-y-6">
+        <div class="flex items-center gap-3">
+            <a
+                href="/admin"
+                class="inline-flex items-center gap-1 text-sm text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+            >
+                <svg
+                    class="w-4 h-4"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    stroke="currentColor"
+                >
+                    <path
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        stroke-width="2"
+                        d="M15 19l-7-7 7-7"></path>
+                </svg>
+                {t('common.back')}
+            </a>
+        </div>
+
+        <h1 class="text-2xl font-bold text-gray-900 dark:text-white">
+            {t('admin.educationGrant.title')}
+        </h1>
+
+        <BulkEducationGrant
+            client:load
+            educationTypes={eduTypes}
+            events={eventRows}
+            users={allUsers}
+            t={translations}
+        />
+    </div>
+</BaseLayout>

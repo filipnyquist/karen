@@ -64,6 +64,12 @@ const translations = flattenTranslations(Astro.locals.translations as unknown as
       <a href="/admin/education-types" class="px-4 py-2 rounded-md bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 text-sm font-medium hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors">
         {t('admin.educationTypes.title')}
       </a>
+      {/* Bulk-grant education: same admin tier as Education types.
+          The endpoint POST /api/admin/education/bulk lives on
+          adminRoutes which uses adminDerive. */}
+      <a href="/admin/education-grant" class="px-4 py-2 rounded-md bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 text-sm font-medium hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors">
+        {t('admin.educationGrant.title') || 'Bulk-grant education'}
+      </a>
       <a href="/admin/exports/scoreboard" class="px-4 py-2 rounded-md bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 text-sm font-medium hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors">
         {t('export.scoreboardButton') || 'Scoreboard export'}
       </a>

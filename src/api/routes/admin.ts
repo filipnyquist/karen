@@ -11,8 +11,10 @@ import {
     tickets,
     userEducations,
     users,
+    workerRegistrations,
 } from "../../db/schema";
 import { recordAdminAction } from "../../services/auditLog";
+import { computeEducationExpiry } from "../../services/educations";
 import {
     adminDerive,
     isSuperadmin,
@@ -443,6 +445,14 @@ export const adminRoutes = new Elysia({ prefix: "/admin" })
                 );
             }
 
+            // Expiry math lives in one place now — both this single-user
+            // grant and the bulk grant below call computeEducationExpiry.
+            const completedAt = new Date();
+            const expiresAt = computeEducationExpiry(
+                eduType[0].validityMonths,
+                completedAt,
+            );
+
             const existing = await db
                 .select()
                 .from(userEducations)
@@ -458,19 +468,6 @@ export const adminRoutes = new Elysia({ prefix: "/admin" })
                 .limit(1);
 
             if (existing.length > 0) {
-                const completedAt = new Date();
-                const expiresAt = eduType[0].validityMonths
-                    ? new Date(
-                          completedAt.getTime() +
-                              eduType[0].validityMonths *
-                                  30 *
-                                  24 *
-                                  60 *
-                                  60 *
-                                  1000,
-                      )
-                    : null;
-
                 await db
                     .update(userEducations)
                     .set({
@@ -488,19 +485,6 @@ export const adminRoutes = new Elysia({ prefix: "/admin" })
                         ),
                     );
             } else {
-                const completedAt = new Date();
-                const expiresAt = eduType[0].validityMonths
-                    ? new Date(
-                          completedAt.getTime() +
-                              eduType[0].validityMonths *
-                                  30 *
-                                  24 *
-                                  60 *
-                                  60 *
-                                  1000,
-                      )
-                    : null;
-
                 await db.insert(userEducations).values({
                     userId: body.userId,
                     educationTypeId: body.educationTypeId,
@@ -525,6 +509,159 @@ export const adminRoutes = new Elysia({ prefix: "/admin" })
             body: t.Object({
                 userId: t.String(),
                 educationTypeId: t.Number(),
+            }),
+        },
+    )
+    // ─── bulk grant (admin + superadmin) ─────────────────────────────
+    // Two-tab UI at /admin/education-grant:
+    //   • mode="event"  → resolve workers from worker_registrations
+    //   • mode="users"  → trust the body's userIds array
+    // Single atomic INSERT ... ON CONFLICT DO UPDATE on the
+    // (user_id, education_type_id) composite PK. Idempotent:
+    // re-running just re-certifies (the same operation as a fresh
+    // grant via the single-user endpoint above).
+    .post(
+        "/education/bulk",
+        async ({ body, user: actor }) => {
+            // ── 1. Resolve target user ids ──────────────────────────────
+            let userIds: string[];
+
+            if (body.mode === "event") {
+                if (!body.eventId) {
+                    throw new AppError(
+                        "Missing eventId for mode=event",
+                        400,
+                        "MISSING_EVENT_ID",
+                    );
+                }
+                const eventRow = await db
+                    .select({ id: events.id })
+                    .from(events)
+                    .where(eq(events.id, body.eventId))
+                    .limit(1);
+                if (eventRow.length === 0) {
+                    throw new AppError(
+                        "Event not found",
+                        404,
+                        "EVENT_NOT_FOUND",
+                    );
+                }
+                const rows = await db
+                    .select({ userId: workerRegistrations.userId })
+                    .from(workerRegistrations)
+                    .where(eq(workerRegistrations.eventId, body.eventId));
+                userIds = rows.map((r) => r.userId);
+            } else {
+                if (!body.userIds || body.userIds.length === 0) {
+                    throw new AppError(
+                        "No users selected",
+                        400,
+                        "NO_USERS_SELECTED",
+                    );
+                }
+                userIds = body.userIds;
+            }
+
+            if (userIds.length === 0) {
+                throw new AppError(
+                    "No users selected",
+                    400,
+                    "NO_USERS_SELECTED",
+                );
+            }
+
+            // ── 2. Validate education type ─────────────────────────────
+            const eduType = await db
+                .select()
+                .from(educationTypes)
+                .where(eq(educationTypes.id, body.educationTypeId))
+                .limit(1);
+            if (eduType.length === 0) {
+                throw new AppError(
+                    "Education type not found",
+                    404,
+                    "EDUCATION_TYPE_NOT_FOUND",
+                );
+            }
+
+            // ── 3. Compute expiry once ─────────────────────────────────
+            const completedAt = new Date(body.completedAt);
+            if (Number.isNaN(completedAt.getTime())) {
+                throw new AppError(
+                    "Invalid completedAt timestamp",
+                    400,
+                    "INVALID_COMPLETED_AT",
+                );
+            }
+            const expiresAt = computeEducationExpiry(
+                eduType[0].validityMonths,
+                completedAt,
+            );
+
+            // ── 4. Atomic upsert — single SQL over the composite PK ─────
+            await db
+                .insert(userEducations)
+                .values(
+                    userIds.map((uid) => ({
+                        userId: uid,
+                        educationTypeId: body.educationTypeId,
+                        completedAt,
+                        expiresAt,
+                        verifiedBy: actor.id,
+                    })),
+                )
+                .onConflictDoUpdate({
+                    target: [
+                        userEducations.userId,
+                        userEducations.educationTypeId,
+                    ],
+                    set: {
+                        completedAt,
+                        expiresAt,
+                        verifiedBy: actor.id,
+                    },
+                });
+
+            // ── 5. Audit row (single log entry for the batch) ──────────
+            await recordAdminAction(
+                actor.id,
+                "user.education.grant.bulk",
+                null,
+                {
+                    newValue: {
+                        educationTypeId: body.educationTypeId,
+                        userIds,
+                        completedAt: completedAt.toISOString(),
+                        count: userIds.length,
+                        mode: body.mode,
+                        eventId:
+                            body.mode === "event"
+                                ? (body.eventId ?? null)
+                                : null,
+                    },
+                },
+            );
+
+            return {
+                success: true,
+                granted: userIds.length,
+                skipped: 0,
+            };
+        },
+        {
+            body: t.Object({
+                mode: t.Union([t.Literal("event"), t.Literal("users")]),
+                educationTypeId: t.Number(),
+                completedAt: t.String({ format: "date-time" }),
+                // Per-mode optional fields; presence is enforced inside
+                // the handler (Elysia 1.x doesn't expose a tagged-union
+                // body validator, so we validate manually).
+                eventId: t.Optional(t.String({ format: "uuid" })),
+                userIds: t.Optional(
+                    t.Array(t.String({ format: "uuid" }), {
+                        maxItems: 500,
+                    }),
+                ),
             }),
         },
     )
