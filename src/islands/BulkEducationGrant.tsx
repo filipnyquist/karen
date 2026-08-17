@@ -2,11 +2,18 @@
 //
 // Admin tier bulk-grant of a single education type to a batch of users.
 // Two tabs feed the same form:
-//   • Event  — pick an event from a dropdown; the preloaded
-//              `allWorkers` list is filtered client-side by eventId.
+//   • Event  — pick an event from a dropdown; workers for that event
+//              are fetched on demand via
+//              `GET /api/events/:id/workers` (the same endpoint the
+//              event detail page uses). Cached in component state so
+//              re-selecting is instant.
 //   • Users  — multi-pick users from the directory via search + checkboxes.
 // Either path lands users into a single `selectedUserIds: Set<string>`.
 // The submit button POSTs to /api/admin/education/bulk.
+//
+// Hydration marker: the root <div> gets `data-hydrated="true"` after
+// the first useEffect fires, so e2e tests can wait for Preact to
+// attach the onChange handlers before driving a <select>.
 
 import { useEffect, useMemo, useState } from "preact/hooks";
 
@@ -33,12 +40,25 @@ interface UserOption {
     role: "user" | "admin" | "superadmin";
 }
 
-interface WorkerRow {
-    eventId: string;
+// GET /api/events/:id/workers response shape, projected down to
+// what the bulk-grant UI needs. The endpoint anonymises `name`
+// server-side for non-auth callers (we're admin so we get the
+// full name anyway).
+interface RawEventWorker {
+    id: string;
+    nickname: string | null;
+    name: string | null;
+    profilePic: string | null;
+    responsible: boolean;
+    hasPubWorker: boolean;
+    hasAas: boolean;
+    createdAt: string;
+}
+
+interface WorkerLite {
     userId: string;
     nickname: string | null;
     name: string | null;
-    email: string;
     responsible: boolean;
 }
 
@@ -46,7 +66,6 @@ interface BulkEducationGrantProps {
     educationTypes: EducationTypeRow[];
     events: EventOption[];
     users: UserOption[];
-    workers: WorkerRow[];
     t: Record<string, string>;
 }
 
@@ -58,12 +77,11 @@ function eduLabel(et: EducationTypeRow): string {
     return et.description || et.name;
 }
 
-function userLabel(u: UserOption | WorkerRow): string {
+function userLabel(u: UserOption | WorkerLite): string {
     return (
         u.nickname?.trim() ||
         (u as UserOption).name?.trim() ||
-        (u as WorkerRow).name?.trim() ||
-        (u as WorkerRow).email ||
+        (u as WorkerLite).name?.trim() ||
         (u as UserOption).email ||
         ""
     );
@@ -73,7 +91,6 @@ export default function BulkEducationGrant({
     educationTypes,
     events,
     users,
-    workers,
     t,
 }: BulkEducationGrantProps) {
     const [mode, setMode] = useState<Mode>("event");
@@ -81,6 +98,13 @@ export default function BulkEducationGrant({
         () => new Set(),
     );
     const [selectedEventId, setSelectedEventId] = useState<string>("");
+    // Cache of workers per eventId — populated lazily when the user
+    // picks an event. Lives only in component state; never SSR-
+    // shipped, so Record vs. Map doesn't matter for serialisation.
+    const [workersByEvent, setWorkersByEvent] = useState<
+        Record<string, WorkerLite[]>
+    >({});
+    const [workersLoading, setWorkersLoading] = useState(false);
     const [searchQuery, setSearchQuery] = useState("");
     const [debouncedSearch, setDebouncedSearch] = useState("");
     const [educationTypeId, setEducationTypeId] = useState<number | null>(null);
@@ -89,10 +113,65 @@ export default function BulkEducationGrant({
     const [error, setError] = useState("");
     const [success, setSuccess] = useState("");
 
+    // Hydration marker — the first effect (any effect) fires once
+    // Preact has finished hydrating, at which point the onChange
+    // handlers on the form controls are wired up. Tests use this
+    // attribute to wait before driving a `<select>`.
+    const [hydrated, setHydrated] = useState(false);
+    useEffect(() => {
+        setHydrated(true);
+    }, []);
+
+    // Debounced user-search filter.
     useEffect(() => {
         const handle = setTimeout(() => setDebouncedSearch(searchQuery), 300);
         return () => clearTimeout(handle);
     }, [searchQuery]);
+
+    // Fetch workers for the selected event on demand. Cached in
+    // `workersByEvent` keyed by eventId so re-selecting is instant.
+    useEffect(() => {
+        if (!selectedEventId) return;
+        if (workersByEvent[selectedEventId]) {
+            // Already cached; nothing to do.
+            return;
+        }
+        let cancelled = false;
+        setWorkersLoading(true);
+        (async () => {
+            try {
+                const res = await fetch(
+                    `/api/events/${selectedEventId}/workers`,
+                    { credentials: "same-origin" },
+                );
+                if (!res.ok) {
+                    throw new Error(
+                        t["common.failedToLoad"] || "Failed to load",
+                    );
+                }
+                const data = (await res.json()) as RawEventWorker[];
+                if (cancelled) return;
+                const lite: WorkerLite[] = data.map((r) => ({
+                    userId: r.id,
+                    nickname: r.nickname,
+                    name: r.name,
+                    responsible: r.responsible,
+                }));
+                setWorkersByEvent((prev) => ({
+                    ...prev,
+                    [selectedEventId]: lite,
+                }));
+            } catch (err) {
+                if (cancelled) return;
+                setError(err instanceof Error ? err.message : String(err));
+            } finally {
+                if (!cancelled) setWorkersLoading(false);
+            }
+        })();
+        return () => {
+            cancelled = true;
+        };
+    }, [selectedEventId, workersByEvent, t]);
 
     const clearMsgs = () => {
         setError("");
@@ -109,14 +188,11 @@ export default function BulkEducationGrant({
     };
 
     const selectAllWorkers = () => {
-        if (!selectedEventId) return;
-        const eventWorkers = workers.filter(
-            (w) => w.eventId === selectedEventId,
-        );
-        if (eventWorkers.length === 0) return;
+        const workers = workersByEvent[selectedEventId] ?? [];
+        if (workers.length === 0) return;
         setSelectedUserIds((prev) => {
             const next = new Set(prev);
-            for (const w of eventWorkers) next.add(w.userId);
+            for (const w of workers) next.add(w.userId);
             return next;
         });
     };
@@ -144,8 +220,8 @@ export default function BulkEducationGrant({
     }, [users, debouncedSearch]);
 
     const eventWorkers = useMemo(
-        () => workers.filter((w) => w.eventId === selectedEventId),
-        [workers, selectedEventId],
+        () => workersByEvent[selectedEventId] ?? [],
+        [workersByEvent, selectedEventId],
     );
 
     const selectedCount = selectedUserIds.size;
@@ -219,7 +295,7 @@ export default function BulkEducationGrant({
     }
 
     return (
-        <div class="space-y-6">
+        <div class="space-y-6" data-hydrated={hydrated ? "true" : "false"}>
             {error && (
                 <div class="p-3 rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm">
                     {error}
@@ -328,13 +404,19 @@ export default function BulkEducationGrant({
                                     clearMsgs();
                                     selectAllWorkers();
                                 }}
-                                disabled={eventWorkers.length === 0}
+                                disabled={
+                                    workersLoading || eventWorkers.length === 0
+                                }
                                 class="text-xs px-2 py-1 rounded-md border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 disabled:opacity-50"
                             >
                                 {t["admin.educationGrant.selectWorkersButton"]}
                             </button>
                         </div>
-                        {eventWorkers.length === 0 ? (
+                        {workersLoading ? (
+                            <p class="px-4 py-6 text-sm text-gray-400 text-center">
+                                {t["common.loading"]}
+                            </p>
+                        ) : eventWorkers.length === 0 ? (
                             <p class="px-4 py-6 text-sm text-gray-400 text-center">
                                 {t["admin.educationGrant.noEventSelected"]}
                             </p>
@@ -362,9 +444,6 @@ export default function BulkEducationGrant({
                                         >
                                             <span class="text-gray-900 dark:text-white">
                                                 {userLabel(w)}
-                                            </span>
-                                            <span class="ml-2 text-xs text-gray-400">
-                                                {w.email}
                                             </span>
                                             {w.responsible && (
                                                 <span class="ml-2 text-xs px-1.5 py-0.5 rounded bg-yellow-100 text-yellow-700 dark:bg-yellow-900 dark:text-yellow-300">
@@ -521,7 +600,7 @@ export default function BulkEducationGrant({
                         onInput={(e) => {
                             clearMsgs();
                             setCompletedAt(
-                                (e.target as HTMLInputElement).value,
+                                (e.target as HTMLSelectElement).value,
                             );
                         }}
                         required
@@ -546,6 +625,7 @@ export default function BulkEducationGrant({
                             handleSubmit();
                         }}
                         disabled={!canSubmit}
+                        data-testid="grant-button"
                         class="px-4 py-2 rounded-md bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                         {saving

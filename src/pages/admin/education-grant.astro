@@ -10,32 +10,19 @@
 import BaseLayout from '../../layouts/BaseLayout.astro';
 import BulkEducationGrant from '../../islands/BulkEducationGrant';
 import { db } from '../../db';
-import {
-    educationTypes,
-    events,
-    users,
-    workerRegistrations,
-} from '../../db/schema';
+import { educationTypes, events, users } from '../../db/schema';
 import { requireAdmin } from '../../lib/guards';
 import { flattenTranslations } from '../../i18n/index';
-import { desc, eq, inArray } from 'drizzle-orm';
+import { desc, eq } from 'drizzle-orm';
 
 const t = Astro.locals.t;
 const guard = requireAdmin(Astro);
 if (guard instanceof Response) return guard;
 
-// SSR-load what the island needs at render time:
-//   - educationTypes  for the education dropdown
-//   - events          for the Event tab dropdown (capped at 200; older
-//                     events won't appear)
-//   - users           for the Users tab
-//   - workers         a flat list of {eventId, userId, name, email, …}
-//                     for the events listed above — passed to the
-//                     island as a plain array (no Map/UUID-keyed
-//                     Record; structuredClone & devalue round-trip
-//                     cleanly). The island filters by eventId
-//                     client-side.
-
+// SSR-load the lightweight island payload. Workers for the Event
+// tab are fetched on demand from `GET /api/events/:id/workers`
+// (the same endpoint the event detail page uses) — that runs in
+// the island after hydration, so we don't SSR-worker here.
 const eduTypes = await db
     .select()
     .from(educationTypes)
@@ -62,35 +49,6 @@ const allUsers = await db
     .from(users)
     .where(eq(users.isLegacy, false))
     .orderBy(users.email);
-
-// Workers for the recent events. Single SQL joins the 200 event
-// IDs to worker_registrations → users, and we project the flat
-// shape the island consumes. Astro's structuredClone handles
-// arrays of plain objects cleanly; UUID-keyed objects were
-// problematic.
-const allWorkers = eventRows.length === 0
-    ? []
-    : await db
-          .select({
-              eventId: workerRegistrations.eventId,
-              userId: workerRegistrations.userId,
-              responsible: workerRegistrations.responsible,
-              nickname: users.nickname,
-              name: users.name,
-              email: users.email,
-          })
-          .from(workerRegistrations)
-          .innerJoin(users, eq(workerRegistrations.userId, users.id))
-          .where(
-              inArray(
-                  workerRegistrations.eventId,
-                  eventRows.map((e) => e.id),
-              ),
-          )
-          .orderBy(
-              desc(workerRegistrations.responsible),
-              users.email,
-          );
 
 const translations = flattenTranslations(
     Astro.locals.translations as unknown as Record<string, unknown>,
@@ -129,7 +87,6 @@ const translations = flattenTranslations(
             educationTypes={eduTypes}
             events={eventRows}
             users={allUsers}
-            workers={allWorkers}
             t={translations}
         />
     </div>
