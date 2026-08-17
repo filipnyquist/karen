@@ -36,7 +36,12 @@ const eventRows = await db
     })
     .from(events)
     .orderBy(desc(events.startDate))
-    .limit(200);
+    .limit(200)
+    // Drizzle returns Date objects for `timestamp({ withTimezone: true })`;
+    // the island prop is `string`, so ISO-stringify at the SSR boundary.
+    .then((rows) =>
+        rows.map((r) => ({ ...r, startDate: r.startDate.toISOString() })),
+    );
 
 const allUsers = await db
     .select({
