@@ -1,19 +1,20 @@
 ---
 // src/pages/admin/education-types.astro
 //
-// Superadmin-only CRUD for education types (the lookup list for
+// Admin-tier CRUD for education types (the lookup list for
 // user_educations). Endpoint shape mirrors locations:
-// /api/admin/reference-data/education-types (superadmin-gated).
+// /api/admin/reference-data/education-types (admin-gated — superadmins
+// are a superset and retain access via `adminDerive`).
 
 import BaseLayout from '../../layouts/BaseLayout.astro';
 import ReferenceDataTable from '../../islands/ReferenceDataTable';
 import { db } from '../../db';
 import { educationTypes } from '../../db/schema';
-import { requireSuperadmin } from '../../lib/guards';
+import { requireAdmin } from '../../lib/guards';
 import { flattenTranslations } from '../../i18n/index';
 
 const t = Astro.locals.t;
-const guard = requireSuperadmin(Astro);
+const guard = requireAdmin(Astro);
 if (guard instanceof Response) return guard;
 
 const rows = await db

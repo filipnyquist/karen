@@ -25,7 +25,7 @@ export function generateInvitationToken(): string {
 
 export interface CreateInvitationInput {
     email: string;
-    role: "user" | "responsible" | "admin" | "superadmin";
+    role: "user" | "admin" | "superadmin";
     invitedBy: string;
     lang: Lang;
 }

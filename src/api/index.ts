@@ -1,4 +1,5 @@
 // src/api/index.ts
+import { eq } from "drizzle-orm";
 import { Elysia } from "elysia";
 import { db } from "../db";
 import { eventStates, locations } from "../db/schema";
@@ -23,7 +24,15 @@ import { workerRoutes } from "./routes/workers";
 export const api = new Elysia({ prefix: "/api" })
     // Public reference data endpoints
     .get("/locations", async () => {
-        return db.select().from(locations);
+        // Filter retired locations out of the event-creation picker.
+        // The createEvent service applies the same filter server-side
+        // so API-only bypass is closed too. The admin GET route
+        // (superadmin-only) intentionally returns all rows.
+        return db
+            .select()
+            .from(locations)
+            .where(eq(locations.active, true))
+            .orderBy(locations.name);
     })
     .get("/event-states", async () => {
         return db.select().from(eventStates);

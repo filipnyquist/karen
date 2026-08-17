@@ -209,22 +209,18 @@ test.describe("Reference data CRUD (superadmin gate)", () => {
         expect(body.code).toBe("LOCATION_IN_USE");
     });
 
-    test("regular admin gets 403 on every reference-data endpoint", async ({
+    test("regular admin gets 403 on locations endpoints (superadmin-only)", async ({
         page,
     }) => {
         await login(page, "admin");
 
+        // Locations stay superadmin-only: the `active` toggle affects
+        // what appears in the event-creation picker — heavy foot-gun.
         const endpoints: Array<
             ["GET" | "POST" | "PUT" | "DELETE", string, unknown?]
         > = [
             ["GET", "/api/admin/reference-data/locations"],
             ["POST", "/api/admin/reference-data/locations", { name: "hack" }],
-            ["GET", "/api/admin/reference-data/education-types"],
-            [
-                "POST",
-                "/api/admin/reference-data/education-types",
-                { name: "hack" },
-            ],
         ];
         for (const [method, url, body] of endpoints) {
             const res = await browserFetch(page, method, url, body);
@@ -233,6 +229,53 @@ test.describe("Reference data CRUD (superadmin gate)", () => {
                 `${method} ${url} should be 403 for non-superadmin, got ${res.status}`,
             ).toBe(403);
         }
+    });
+
+    test("regular admin CAN reach education-types endpoints (admin-gated)", async ({
+        page,
+    }) => {
+        await login(page, "admin");
+
+        // Education types were relaxed from superadmin to admin tier —
+        // regular admins can CRUD them now. Superadmins retain access
+        // via the `adminDerive` superset.
+        const createRes = await browserFetch(
+            page,
+            "POST",
+            "/api/admin/reference-data/education-types",
+            {
+                name: `e2e-admin-edu-${Date.now()}`,
+                validityMonths: 6,
+            },
+        );
+        expect(createRes.ok, `create failed: ${createRes.status}`).toBeTruthy();
+        const created = createRes.body as { id: number };
+
+        const getRes = await browserFetch(
+            page,
+            "GET",
+            "/api/admin/reference-data/education-types",
+        );
+        expect(getRes.ok).toBeTruthy();
+
+        const putRes = await browserFetch(
+            page,
+            "PUT",
+            `/api/admin/reference-data/education-types/${created.id}`,
+            {
+                name: created.id ? `e2e-admin-edu-${created.id}` : "x",
+                description: "updated by regular admin",
+                validityMonths: 12,
+            },
+        );
+        expect(putRes.ok, `put failed: ${putRes.status}`).toBeTruthy();
+
+        const delRes = await browserFetch(
+            page,
+            "DELETE",
+            `/api/admin/reference-data/education-types/${created.id}`,
+        );
+        expect(delRes.ok, `delete failed: ${delRes.status}`).toBeTruthy();
     });
 
     test("regular admin cannot reach /admin/locations (redirect)", async ({
@@ -244,13 +287,10 @@ test.describe("Reference data CRUD (superadmin gate)", () => {
         expect(new URL(page.url()).pathname).toBe("/");
     });
 
-    test("regular admin cannot reach /admin/education-types (redirect)", async ({
-        page,
-    }) => {
+    test("regular admin CAN reach /admin/education-types", async ({ page }) => {
         await login(page, "admin");
         await page.goto("/admin/education-types");
-        await page.waitForURL("/");
-        expect(new URL(page.url()).pathname).toBe("/");
+        expect(new URL(page.url()).pathname).toBe("/admin/education-types");
     });
 
     test("non-admin user cannot reach /admin/locations (redirect)", async ({
@@ -289,13 +329,17 @@ test.describe("Reference data CRUD (superadmin gate)", () => {
         ).toBeVisible();
     });
 
-    test("regular admin hub does NOT show the buttons", async ({ page }) => {
+    test("regular admin hub shows education-types but not locations", async ({
+        page,
+    }) => {
         await login(page, "admin");
         await page.goto("/admin");
         await page.waitForLoadState("networkidle");
+        // Locations stay superadmin-only.
         await expect(page.locator('a[href="/admin/locations"]')).toHaveCount(0);
+        // Education types opened to admins in this change.
         await expect(
             page.locator('a[href="/admin/education-types"]'),
-        ).toHaveCount(0);
+        ).toBeVisible();
     });
 });

@@ -137,6 +137,14 @@ export default {
         stateYes: "Confirmed",
         stateNo: "Cancelled",
         stateMaybe: "Tentative",
+        // Descriptive copy for the segmented picker on the event
+        // create/edit form. The short `stateYes` / `stateNo` /
+        // `stateMaybe` keys above are reused for badges on event
+        // cards and calendars — keep them short. The `*Full` variants
+        // are only consumed by the picker.
+        stateYesFull: "Yes — it will or has happened",
+        stateNoFull: "No — it has been cancelled",
+        stateMaybeFull: "Maybe — TBD",
         stateUpcoming: "Upcoming",
         stateOngoing: "Ongoing",
         stateHappened: "Has happened",
@@ -475,14 +483,18 @@ export default {
         table: {
             name: "Name",
             description: "Description",
+            active: "Active",
             validityMonths: "Validity (months)",
             actions: "Actions",
             validityMonthsHelp: "0–120, or empty for no expiry",
             empty: "No rows",
         },
+        activeYes: "Yes",
+        activeNo: "Hidden",
         locations: {
             title: "Locations",
             addButton: "Add location",
+            activeLabel: "Active in picker",
             modal: {
                 createTitle: "Add location",
                 editTitle: "Edit location",

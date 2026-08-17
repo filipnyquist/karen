@@ -39,11 +39,15 @@ export async function createEvent(data: {
         );
     }
 
-    // Validate location exists
+    // Validate location exists AND is active. Without the active flag
+    // here, a retired location could still be set via direct API call
+    // even though the public picker hides it.
     const location = await db
         .select()
         .from(locations)
-        .where(eq(locations.id, data.locationId))
+        .where(
+            and(eq(locations.id, data.locationId), eq(locations.active, true)),
+        )
         .limit(1);
     if (location.length === 0) {
         throw new AppError("Location not found", 404, "LOCATION_NOT_FOUND");

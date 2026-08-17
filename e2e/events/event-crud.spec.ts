@@ -21,7 +21,11 @@ test.describe("Admin Event CRUD", () => {
         await page.locator("select#locationId").selectOption({ index: 1 }); // Villan
         await page.locator("input#startDate").fill("2026-06-20T18:00");
         await page.locator("input#endDate").fill("2026-06-20T23:00");
-        await page.locator("select#willOccur").selectOption({ label: "yes" });
+        // EventForm switched to a segmented native-radio control
+        // (Change 4) — pick by value rather than by label so the
+        // assertion is stable across the localised picker copy.
+        // "yes" is seeded as id=1.
+        await page.locator('input[name="willOccur"][value="1"]').check();
 
         await page
             .getByRole("button", { name: /skapa evenemang|create event/i })

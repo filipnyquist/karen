@@ -21,9 +21,7 @@ interface InviteResponse {
 
 export default function InviteUserModal({ onClose, t }: InviteUserModalProps) {
     const [email, setEmail] = useState("");
-    const [role, setRole] = useState<
-        "user" | "responsible" | "admin" | "superadmin"
-    >("user");
+    const [role, setRole] = useState<"user" | "admin" | "superadmin">("user");
     const [submitting, setSubmitting] = useState(false);
     const [error, setError] = useState("");
     const [result, setResult] = useState<InviteResponse | null>(null);
@@ -135,7 +133,6 @@ export default function InviteUserModal({ onClose, t }: InviteUserModalProps) {
                                 <option value="user">
                                     {t["admin.roleUser"] || "User"}
                                 </option>
-                                <option value="responsible">Responsible</option>
                                 <option value="admin">
                                     {t["admin.roleAdmin"] || "Admin"}
                                 </option>

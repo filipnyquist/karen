@@ -138,6 +138,14 @@ export default {
         stateYes: "Bekräftat",
         stateNo: "Inställt",
         stateMaybe: "Preliminärt",
+        // Beskrivande texter för den segmenterade väljaren i
+        // evenemangsformuläret. `stateYes` / `stateNo` / `stateMaybe`
+        // ovan återanvänds för badge-texter på evenemangskort och i
+        // kalendern — håll dem korta. `*Full`-varianterna används
+        // bara i väljaren.
+        stateYesFull: "Ja — det kommer eller har hänt",
+        stateNoFull: "Nej — det har ställts in",
+        stateMaybeFull: "Kanske — ej bestämt",
         stateUpcoming: "Kommande",
         stateOngoing: "Pågående",
         stateHappened: "Hänt",
@@ -478,14 +486,18 @@ export default {
         table: {
             name: "Namn",
             description: "Beskrivning",
+            active: "Aktiv",
             validityMonths: "Giltighet (månader)",
             actions: "Åtgärder",
             validityMonthsHelp: "0–120, eller tomt för ingen utgång",
             empty: "Inga rader",
         },
+        activeYes: "Ja",
+        activeNo: "Dold",
         locations: {
             title: "Platser",
             addButton: "Lägg till plats",
+            activeLabel: "Aktiv i väljaren",
             modal: {
                 createTitle: "Lägg till plats",
                 editTitle: "Redigera plats",

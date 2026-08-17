@@ -126,7 +126,7 @@ async function seed() {
         data: {
             name: string;
             nickname: string;
-            role: "user" | "responsible" | "admin" | "superadmin";
+            role: "user" | "admin" | "superadmin";
             verified?: boolean;
             emailVerified?: boolean;
         },
