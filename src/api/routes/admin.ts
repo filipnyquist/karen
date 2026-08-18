@@ -22,6 +22,7 @@ import {
 } from "../middleware/auth";
 import { AppError } from "../middleware/error";
 import { exportRoutes } from "./exports";
+import { superadminUserRoutes } from "./superadminUsers";
 
 // Body validation for /reference-data endpoints. Kept here so the schemas
 // live next to the routes that use them.
@@ -374,6 +375,7 @@ export const adminRoutes = new Elysia({ prefix: "/admin" })
     .use(exportRoutes)
     .use(locationReferenceRoutes)
     .use(educationTypeReferenceRoutes)
+    .use(superadminUserRoutes)
     .post(
         "/verify",
         async ({ body, user: actor }) => {
