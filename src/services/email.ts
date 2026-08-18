@@ -20,6 +20,7 @@ import {
     InvitationEmail,
     type Lang,
     MigrationLinkEmail,
+    PasswordResetEmail,
     renderEmail,
     StudentVerificationEmail,
     type TFunc,
@@ -226,6 +227,36 @@ export function sendMigrationLinkEmail(args: {
             });
         } catch (err) {
             console.error("[email] sendMigrationLinkEmail failed", {
+                to: args.to,
+                err: err instanceof Error ? err.message : String(err),
+            });
+        }
+    })();
+}
+
+export function sendPasswordResetEmail(args: {
+    to: string;
+    baseUrl: string;
+    token: string;
+    lang: Lang;
+}): void {
+    void (async () => {
+        try {
+            const t: TFunc = tFor(args.lang);
+            const url = `${args.baseUrl}/reset-password?token=${args.token}`;
+            const rendered = await renderEmail({
+                template: PasswordResetEmail,
+                props: { url, t, lang: args.lang, recipient: args.to },
+                key: "passwordReset",
+            });
+            sendEmail({
+                to: args.to,
+                subject: rendered.subject,
+                html: rendered.html,
+                text: rendered.text,
+            });
+        } catch (err) {
+            console.error("[email] sendPasswordResetEmail failed", {
                 to: args.to,
                 err: err instanceof Error ? err.message : String(err),
             });

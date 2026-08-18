@@ -84,6 +84,34 @@ export default {
         notVerified: "Ej verifierad",
         studentVerificationRequired:
             "Du behöver vara verifierad (eller ha migrerat ditt gamla konto) för att kunna anmäla dig som jobbare. Verifiera dig på startsidan med en @student.bth.se/@bthstudent.se mejl, eller be KPS verifiera din status!",
+        forgotPasswordLink: "Glömt lösenord?",
+        forgotPassword: {
+            title: "Glömt lösenord",
+            description:
+                "Ange din e-post så skickar vi en länk där du kan välja ett nytt lösenord.",
+            emailLabel: "E-post",
+            submitButton: "Skicka återställningslänk",
+            success:
+                "Om det finns ett konto med den e-postadressen har vi skickat en återställningslänk. Kolla din inkorg.",
+            backToLogin: "Tillbaka till inloggning",
+        },
+        resetPassword: {
+            title: "Välj ett nytt lösenord",
+            passwordLabel: "Nytt lösenord",
+            passwordHelp:
+                "Minst 8 tecken med stor och liten bokstav samt en siffra.",
+            submitButton: "Spara nytt lösenord",
+            successHeading: "Lösenordet är uppdaterat",
+            successMessage:
+                "Ditt lösenord har ändrats. Logga in med ditt nya lösenord.",
+            loginPrompt: "Gå till inloggning",
+            invalidToken:
+                "Den här återställningslänken är ogiltig. Begär en ny från sidan för glömt lösenord.",
+            expiredToken:
+                "Den här återställningslänken har gått ut. Begär en ny.",
+            usedToken:
+                "Den här återställningslänken har redan använts. Begär en ny om du behöver återställa igen.",
+        },
     },
     event: {
         title: "Evenemang",
@@ -696,6 +724,14 @@ export default {
             cta: "Hämta konto",
             intro: "Klicka på knappen nedan för att hämta ditt gamla konto och överföra din data.",
             ignore: "Om du inte begärde detta kan du ignorera mejlet.",
+        },
+        passwordReset: {
+            subject: "Återställ ditt Karen-lösenord",
+            preview: "En lösenordsåterställning begärdes för ditt Karen-konto",
+            cta: "Återställ lösenord",
+            intro: "Klicka på knappen nedan för att välja ett nytt lösenord för ditt konto.",
+            expiry: "Länken är giltig i 1 timme och kan bara användas en gång.",
+            ignore: "Om du inte begärde detta kan du ignorera mejlet — ditt lösenord förblir detsamma.",
         },
     },
 };

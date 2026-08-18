@@ -84,6 +84,33 @@ export default {
         notVerified: "Not verified",
         studentVerificationRequired:
             "You need to be verified (or have migrated your old account) to sign up to work an event. Either verify yourself on the verify page, or ask KPS to verify your status!",
+        forgotPasswordLink: "Forgot password?",
+        forgotPassword: {
+            title: "Forgot password",
+            description:
+                "Enter your email and we'll send you a link to choose a new password.",
+            emailLabel: "Email",
+            submitButton: "Send reset link",
+            success:
+                "If an account exists for that email, we've sent a reset link. Check your inbox.",
+            backToLogin: "Back to log in",
+        },
+        resetPassword: {
+            title: "Choose a new password",
+            passwordLabel: "New password",
+            passwordHelp:
+                "At least 8 characters with uppercase, lowercase, and a digit.",
+            submitButton: "Save new password",
+            successHeading: "Password updated",
+            successMessage:
+                "Your password has been changed. Log in with your new password.",
+            loginPrompt: "Go to log in",
+            invalidToken:
+                "This reset link is invalid. Request a new one from the forgot-password page.",
+            expiredToken: "This reset link has expired. Request a new one.",
+            usedToken:
+                "This reset link has already been used. Request a new one if you need to reset again.",
+        },
     },
     event: {
         title: "Event",
@@ -694,6 +721,14 @@ export default {
             cta: "Claim account",
             intro: "Click the button below to claim your old account and transfer your data.",
             ignore: "If you didn't request this, you can ignore this email.",
+        },
+        passwordReset: {
+            subject: "Reset your Karen password",
+            preview: "A password reset was requested for your Karen account",
+            cta: "Reset password",
+            intro: "Click the button below to choose a new password for your account.",
+            expiry: "This link expires in 1 hour and can only be used once.",
+            ignore: "If you didn't request this, you can ignore this email — your password will stay the same.",
         },
     },
 };

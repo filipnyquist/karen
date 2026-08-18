@@ -53,6 +53,11 @@ function isExempt(pathname: string, method: string): boolean {
         // the email is the proof of inbox ownership), so CSRF buys an
         // attacker nothing. /check is a GET and exempt by method anyway.
         "/api/invitations/accept",
+        // Password reset: user has no session yet, so CSRF buys an
+        // attacker nothing. The email link in the request step is
+        // itself the proof of inbox ownership in the consume step.
+        "/api/auth/forgot-password",
+        "/api/auth/reset-password",
     ];
     return unauthEndpoints.includes(pathname);
 }
