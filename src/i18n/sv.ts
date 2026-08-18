@@ -77,6 +77,7 @@ export default {
         alreadyVerified: "Du är redan verifierad!",
         bthEmailBlocked:
             "Du kan inte registrera dig med en @student.bth.se/@bthstudent.se e-post, du behöver använda en personlig e-post. Detta för att du ska kunna komma åt ditt konto även när du inte har tillgång till dessa mejladresser.",
+        firstAndLastNameRequired: "Ange både för- och efternamn",
         verified: "Verifierad student/alumni",
         notVerified: "Ej verifierad",
         studentVerificationRequired:

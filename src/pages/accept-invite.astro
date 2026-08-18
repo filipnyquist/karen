@@ -7,9 +7,11 @@
 
 import BaseLayout from '../layouts/BaseLayout.astro';
 import { flattenTranslations } from '../i18n/index';
+import { sha256ScriptHash } from '../lib/csp';
 
 const t = Astro.locals.t;
 const token = Astro.url.searchParams.get('token') ?? '';
+const error = Astro.url.searchParams.get('error');
 
 // SSR fetch: peek the invitation so we can pre-fill the email and show
 // the role. Errors fall through to the "invalid" branch.
@@ -33,6 +35,29 @@ if (token) {
 }
 
 const translations = flattenTranslations(Astro.locals.translations as unknown as Record<string, unknown>);
+
+// Inline submit handler: short-circuit with a banner message when the
+// name field doesn't look like a full first+last name. The literal
+// string rendered into the HTML must match the hash we register, so
+// we keep it in a single const.
+const acceptInviteScript = `(function(){
+  const fullNameMessage = ${JSON.stringify(t('auth.firstAndLastNameRequired'))};
+  function isFullName(value) {
+    const parts = value.trim().split(/\\s+/).filter(Boolean);
+    if (parts.length < 2) return false;
+    return parts[parts.length - 1].length > 1;
+  }
+  document.getElementById('accept-invite-form')?.addEventListener('submit', (e) => {
+    const form = e.target;
+    if (!isFullName(form.name.value)) {
+      e.preventDefault();
+      const params = new URLSearchParams({ token: form.token.value, error: fullNameMessage });
+      window.location.href = '/accept-invite?' + params;
+    }
+  });
+})();`;
+
+Astro.csp?.insertScriptHash(sha256ScriptHash(acceptInviteScript));
 ---
 
 <BaseLayout title={t('invite.acceptTitle') || 'Accept invitation'}>
@@ -47,6 +72,7 @@ const translations = flattenTranslations(Astro.locals.translations as unknown as
       </div>
     ) : preview && (
       <form
+        id="accept-invite-form"
         method="post"
         action="/api/invitations/accept"
         class="space-y-4 bg-white dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-800 p-6"
@@ -54,6 +80,12 @@ const translations = flattenTranslations(Astro.locals.translations as unknown as
         <p class="text-sm text-gray-600 dark:text-gray-400">
           {t('invite.acceptDescription') || 'You have been invited to join Karen. Set a password to activate your account.'}
         </p>
+
+        {error && (
+          <div class="p-3 rounded-md bg-red-50 dark:bg-red-950 border border-red-200 dark:border-red-800">
+            <p class="text-sm text-red-700 dark:text-red-300">{error}</p>
+          </div>
+        )}
 
         <div class="space-y-1">
           <label class="block text-xs font-medium text-gray-500 dark:text-gray-400">
@@ -126,5 +158,7 @@ const translations = flattenTranslations(Astro.locals.translations as unknown as
         </button>
       </form>
     )}
+
+    <script is:inline set:html={acceptInviteScript}></script>
   </div>
 </BaseLayout>
