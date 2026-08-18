@@ -105,6 +105,28 @@ export const verificationPins = pgTable("verification_pins", {
         .notNull(),
 });
 
+// SHA-256 hash of the plaintext token emailed to the user. We store the
+// hash, not the plaintext, deliberately — diverges from
+// `verificationPins` / `invitations` (which both store plaintext).
+// Rationale: a forgot-password DB leak must not yield live reset
+// links. Many more users know how to use this flow than verify-email
+// or claim-invitation, so the active-token count is higher and the
+// blast radius of a plaintext leak is larger. Hashing a 32-byte input
+// with SHA-256 is free; the only place the plaintext lives is the
+// SMTP body.
+export const passwordResetTokens = pgTable("password_reset_tokens", {
+    id: uuid("id").defaultRandom().primaryKey(),
+    userId: uuid("user_id")
+        .notNull()
+        .references(() => users.id, { onDelete: "cascade" }),
+    tokenHash: text("token_hash").notNull().unique(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    usedAt: timestamp("used_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+        .defaultNow()
+        .notNull(),
+});
+
 // ─── Education System ───
 
 export const educationTypes = pgTable("education_types", {

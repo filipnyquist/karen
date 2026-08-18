@@ -63,9 +63,11 @@ export async function createUser(
         .values({ email, passwordHash, name, nickname })
         .returning();
 
-    // Create email verification token
+    // Create email verification token. The send is fire-and-forget
+    // (no `await`): the response goes back to the user before SMTP is
+    // even contacted, so SMTP latency cannot gate request timing.
     const verifyToken = generateToken();
-    await sendVerificationEmail({
+    sendVerificationEmail({
         to: email,
         baseUrl: config.baseUrl,
         token: verifyToken,
@@ -227,7 +229,7 @@ export async function requestVerification(
         expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
     });
 
-    await sendStudentVerificationEmail({
+    sendStudentVerificationEmail({
         to: email,
         baseUrl: config.baseUrl,
         token,

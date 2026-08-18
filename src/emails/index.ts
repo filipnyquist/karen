@@ -10,6 +10,7 @@ import { render } from "@react-email/render";
 import { type ComponentType, createElement } from "react";
 import { InvitationEmail } from "./templates/InvitationEmail";
 import { MigrationLinkEmail } from "./templates/MigrationLinkEmail";
+import { PasswordResetEmail } from "./templates/PasswordResetEmail";
 import { StudentVerificationEmail } from "./templates/StudentVerificationEmail";
 import { VerificationEmail } from "./templates/VerificationEmail";
 
@@ -21,7 +22,8 @@ export type EmailKey =
     | "verification"
     | "studentVerification"
     | "invitation"
-    | "migration";
+    | "migration"
+    | "passwordReset";
 
 export interface BaseEmailProps {
     lang: Lang;
@@ -51,6 +53,7 @@ export async function renderEmail<P extends BaseEmailProps>(
 export {
     InvitationEmail,
     MigrationLinkEmail,
+    PasswordResetEmail,
     StudentVerificationEmail,
     VerificationEmail,
 };

@@ -9,6 +9,7 @@ import { auditLog } from "../db/schema";
 export type AuditAction =
     | "user.role.change"
     | "user.password.set"
+    | "user.password_reset"
     | "user.education.grant"
     | "user.education.grant.bulk"
     | "user.education.revoke"

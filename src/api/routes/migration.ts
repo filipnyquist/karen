@@ -132,7 +132,7 @@ export const migrationRoutes = new Elysia({ prefix: "/migration" })
                     })
                     .where(eq(legacyMappings.id, mapping.id));
 
-                await sendMigrationLinkEmail({
+                sendMigrationLinkEmail({
                     to: mapping.oldEmail,
                     baseUrl: config.baseUrl,
                     token,

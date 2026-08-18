@@ -12,6 +12,11 @@ import {
 } from "../../lib/loginLimiter";
 import * as authService from "../../services/auth";
 import {
+    consumePasswordResetToken,
+    isValidResetToken,
+    requestPasswordReset,
+} from "../../services/passwordReset";
+import {
     buildSessionCookie,
     clearSessionCookie,
     extractSessionToken,
@@ -187,5 +192,70 @@ export const authRoutes = new Elysia({ prefix: "/auth" })
         },
         {
             query: t.Object({ token: t.String() }),
+        },
+    )
+
+    // ─── Forgot-password flow ──────────────────────────────────
+    //
+    // Same response shape regardless of whether the email is in
+    // the DB — the service silently no-ops on a missing user and
+    // the email send (when it does happen) is dispatched off-thread
+    // via `requestPasswordReset`, so the response time doesn't gate
+    // on SMTP. `resetUrl` is only set in non-prod so e2e can
+    // complete the flow without scraping mailer logs (mirrors the
+    // existing `acceptUrl` precedent on /api/invitations).
+    .post(
+        "/forgot-password",
+        async ({ body, request }) => {
+            if (config.turnstile.secret) {
+                if (!body.turnstileToken) {
+                    throw new AppError(
+                        "CAPTCHA required",
+                        400,
+                        "CAPTCHA_REQUIRED",
+                    );
+                }
+                await verifyTurnstile(body.turnstileToken);
+            }
+            const result = await requestPasswordReset(
+                body.email,
+                detectLanguage(request) as "en" | "sv",
+            );
+            return { success: true, resetUrl: result.resetUrl };
+        },
+        {
+            body: t.Object({
+                email: t.String({ format: "email" }),
+                turnstileToken: t.Optional(t.String()),
+            }),
+        },
+    )
+
+    // SSR pre-flight the /reset-password page calls before
+    // rendering the form. GET → exempt from CSRF by method.
+    .get(
+        "/reset-password/check",
+        async ({ query }) => {
+            return await isValidResetToken(query.token);
+        },
+        {
+            query: t.Object({ token: t.String() }),
+        },
+    )
+
+    // Consume a reset token: rotate the password, wipe sessions,
+    // mark the row used, audit. No auto-login — the user proves
+    // they know the new password by typing it at /login.
+    .post(
+        "/reset-password",
+        async ({ body }) => {
+            await consumePasswordResetToken(body.token, body.password);
+            return { success: true };
+        },
+        {
+            body: t.Object({
+                token: t.String({ minLength: 32 }),
+                password: t.String({ minLength: 8 }),
+            }),
         },
     );
