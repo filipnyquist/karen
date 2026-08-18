@@ -161,7 +161,12 @@ const defaultDeps: SetPasswordDeps = {
     },
 };
 
-export const superadminUserRoutes = new Elysia({ prefix: "/admin" })
+// Mounted inside `adminRoutes` (prefix `/admin`), so this subapp uses no
+// extra prefix — the resulting path is `/api/admin/users/:id/password`,
+// not `/api/admin/admin/users/:id/password`. The `superadminDerive` here
+// still gates the route above whatever derive chain `adminRoutes`
+// inherited.
+export const superadminUserRoutes = new Elysia()
     .derive(superadminDerive)
     .put(
         "/users/:id/password",

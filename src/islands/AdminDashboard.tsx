@@ -39,6 +39,15 @@ export default function AdminDashboard({
     const [searchTimeout, setSearchTimeout] = useState<ReturnType<
         typeof setTimeout
     > | null>(null);
+    // `data-hydrated="true"` lets e2e tests wait for Preact to wire up the
+    // row onClick handlers before driving the table. Without this marker
+    // the click on a user row fires before hydration and is a no-op, so
+    // the modal never opens and the test times out. See
+    // memory/preact-hydration-marker.
+    const [hydrated, setHydrated] = useState(false);
+    useEffect(() => {
+        setHydrated(true);
+    }, []);
 
     const refreshUsers = useCallback(async () => {
         try {
@@ -70,7 +79,7 @@ export default function AdminDashboard({
     }, [search, searchTimeout, initialUsers]);
 
     return (
-        <div class="space-y-4">
+        <div class="space-y-4" data-hydrated={hydrated ? "true" : "false"}>
             {/* Search + Invite button row */}
             <div class="flex items-center gap-3">
                 <div class="relative flex-1">

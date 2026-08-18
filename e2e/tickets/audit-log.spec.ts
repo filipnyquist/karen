@@ -100,15 +100,27 @@ test.describe("Ticket audit log", () => {
         const bob = users.find((u) => u.email === "bob@karen.se");
         expect(bob).toBeTruthy();
 
-        // Bob logs in to fetch his tickets.
+        // Bob logs in to fetch his tickets. Other test files (e.g.
+        // superadmin-password-reset) rotate bob's password via the
+        // superadmin API, so reset it back to a known value first.
         await page.context().clearCookies();
+        await login(page, "superadmin");
+        const usersRes2 = await browserGet(page, "/api/admin/users");
+        const allUsers = usersRes2.body as Array<{
+            id: string;
+            email: string;
+        }>;
+        const bobForReset = allUsers.find((u) => u.email === "bob@karen.se");
         const { getPasswordFor } = await import("../helpers/auth");
-        await page.goto("/login");
-        await page.waitForLoadState("networkidle");
-        await page.locator("#email").fill("bob@karen.se");
-        await page.locator("#password").fill(getPasswordFor("bob@karen.se"));
-        await page.locator('#login-form button[type="submit"]').click();
-        await page.waitForURL("/");
+        const seedPassword = getPasswordFor("bob@karen.se");
+        await browserFetch(
+            page,
+            "PUT",
+            `/api/admin/users/${bobForReset?.id}/password`,
+            { password: seedPassword, confirmPassword: seedPassword },
+        );
+        await page.context().clearCookies();
+        await login(page, "bob");
 
         const bobTicketsRes = await browserGet(page, "/api/tickets/mine");
         const bobTickets = bobTicketsRes.body as Array<{
