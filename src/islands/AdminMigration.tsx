@@ -59,10 +59,13 @@ export default function AdminMigration({ t }: AdminMigrationProps) {
     }, []);
 
     async function handleApprove(mapping: Mapping) {
-        // For admin approval, we need the real user's ID. Prompt for it or use a selection.
-        // In practice, the admin would know which new user to link. We'll use a simple prompt.
+        // For manual migration, the admin needs the real user's UUID. Prompt
+        // for it — the admin knows which new account to link to.
+        const promptText =
+            t["migration.manuallyMigratePrompt"] ||
+            "Enter the UUID of the real user to migrate this legacy account to:";
         const userId = prompt(
-            `Enter the new user ID (UUID) to link to ${mapping.oldNickname || mapping.oldEmail}:`,
+            `${promptText} (${mapping.oldNickname || mapping.oldEmail})`,
         );
         if (!userId) return;
 
@@ -247,16 +250,23 @@ export default function AdminMigration({ t }: AdminMigrationProps) {
                                     )}
                                 </td>
                                 <td class="py-2 px-3">
-                                    {m.adminRequested && !m.realUserId && (
+                                    {!m.realUserId && (
                                         <button
                                             onClick={() => handleApprove(m)}
                                             disabled={approving === m.id}
                                             class="px-3 py-1 rounded-md bg-blue-600 text-white text-xs font-medium hover:bg-blue-700 disabled:opacity-50 transition-colors"
+                                            title={
+                                                t[
+                                                    "migration.manuallyMigrateHelp"
+                                                ] ||
+                                                "Use this for accounts where the user can't submit a request themselves."
+                                            }
                                         >
                                             {approving === m.id
                                                 ? "..."
-                                                : t["migration.approve"] ||
-                                                  "Approve"}
+                                                : t[
+                                                      "migration.manuallyMigrate"
+                                                  ] || "Manually migrate"}
                                         </button>
                                     )}
                                 </td>

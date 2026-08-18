@@ -596,6 +596,11 @@ export default {
         statusPending: "Väntande",
         statusUnclaimed: "Ej hämtad",
         approve: "Godkänn",
+        manuallyMigrate: "Migrera manuellt",
+        manuallyMigratePrompt:
+            "Ange UUID för den riktiga användaren att migrera detta legacy-konto till:",
+        manuallyMigrateHelp:
+            "Använd detta för konton där användaren inte kan skicka en begäran själv.",
         noResults: "Inga resultat",
         searchPlaceholder: "Sök på e-post eller smeknamn...",
         "filter.all": "Alla",
