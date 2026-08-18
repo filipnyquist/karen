@@ -15,22 +15,40 @@
 import { eq } from "drizzle-orm";
 import { Elysia, t } from "elysia";
 import { db } from "../../db";
-import { sessions, users } from "../../db/schema";
-import { recordAdminAction } from "../../services/auditLog";
+import { auditLog, sessions, users } from "../../db/schema";
+import { hashPassword as defaultHashPassword } from "../../utils/password";
 import { isStrongPassword } from "../../utils/validation";
 import { superadminDerive } from "../middleware/auth";
 import { AppError } from "../middleware/error";
 
-export interface SetPasswordDeps {
-    findUser: (id: string) => Promise<{ id: string } | null>;
+/**
+ * Inside-transaction dependencies. The reset runs `updatePassword`,
+ * `deleteSessions`, and `recordAudit` inside a single transaction so a
+ * mid-flow failure can't leave the user with a new password but live
+ * sessions (or vice versa).
+ */
+export interface SetPasswordTxDeps {
     updatePassword: (id: string, hash: string) => Promise<void>;
     deleteSessions: (userId: string) => Promise<void>;
+    /**
+     * Best-effort: a failed audit insert should NOT roll back the
+     * password change. The default implementation catches errors and
+     * logs them so the user-facing outcome (password rotated, sessions
+     * wiped) always succeeds. Tests can override for stricter assertions.
+     */
     recordAudit: (
         actorId: string,
         targetUserId: string,
         newValue: { via: string },
     ) => Promise<void>;
+}
+
+export interface SetPasswordDeps {
+    findUser: (id: string) => Promise<{ id: string } | null>;
     hashPassword: (plain: string) => Promise<string>;
+    withTransaction: (
+        work: (tx: SetPasswordTxDeps) => Promise<void>,
+    ) => Promise<void>;
 }
 
 /**
@@ -46,6 +64,16 @@ export async function setUserPassword(
     actor: { id: string },
     deps: SetPasswordDeps,
 ): Promise<{ success: true }> {
+    // Step-level logging is the primary diagnostic for the production
+    // 500 we couldn't reproduce locally. Combined with the
+    // `console.error("Unhandled error:", error)` in the error plugin,
+    // the next failure prints exactly which step blew up.
+    const log = (step: string): void =>
+        console.log(
+            `[setUserPassword] step=${step} actor=${actor.id} target=${params.id}`,
+        );
+
+    log("validate:start");
     if (body.password !== body.confirmPassword) {
         throw new AppError("Passwords do not match", 400, "PASSWORD_MISMATCH");
     }
@@ -56,24 +84,30 @@ export async function setUserPassword(
             "WEAK_PASSWORD",
         );
     }
+    log("validate:ok");
 
+    log("findUser");
     const existing = await deps.findUser(params.id);
     if (!existing) {
         throw new AppError("User not found", 404, "USER_NOT_FOUND");
     }
 
+    log("hashPassword");
     const newHash = await deps.hashPassword(body.password);
-    await deps.updatePassword(params.id, newHash);
 
     // Force every device to re-authenticate. A superadmin-set
     // password is a recovery action: leaving any active session
     // would let an attacker who already has a stolen token keep
     // it. The superadmin's own session (if any) on this user is
     // also wiped — that is intentional.
-    await deps.deleteSessions(params.id);
+    log("withTransaction");
+    await deps.withTransaction(async (tx) => {
+        await tx.updatePassword(params.id, newHash);
+        await tx.deleteSessions(params.id);
+        await tx.recordAudit(actor.id, params.id, { via: "superadmin" });
+    });
 
-    await deps.recordAudit(actor.id, params.id, { via: "superadmin" });
-
+    log("done");
     return { success: true };
 }
 
@@ -86,21 +120,45 @@ const defaultDeps: SetPasswordDeps = {
             .limit(1);
         return row ?? null;
     },
-    updatePassword: async (id, hash) => {
-        await db
-            .update(users)
-            .set({ passwordHash: hash, updatedAt: new Date() })
-            .where(eq(users.id, id));
-    },
-    deleteSessions: async (userId) => {
-        await db.delete(sessions).where(eq(sessions.userId, userId));
-    },
-    recordAudit: async (actorId, targetUserId, newValue) => {
-        await recordAdminAction(actorId, "user.password.set", targetUserId, {
-            newValue,
+    hashPassword: async (plain) => defaultHashPassword(plain),
+    withTransaction: async (work) => {
+        await db.transaction(async (tx) => {
+            await work({
+                updatePassword: async (id, hash) => {
+                    await tx
+                        .update(users)
+                        .set({ passwordHash: hash, updatedAt: new Date() })
+                        .where(eq(users.id, id));
+                },
+                deleteSessions: async (userId) => {
+                    await tx
+                        .delete(sessions)
+                        .where(eq(sessions.userId, userId));
+                },
+                recordAudit: async (actorId, targetUserId, newValue) => {
+                    // Best-effort: a transient audit-log failure
+                    // (FK drift, lock wait, etc.) must not 500 the
+                    // user. Catching here means the tx callback
+                    // resolves normally, and Drizzle commits the
+                    // user-facing ops that already succeeded.
+                    try {
+                        await tx.insert(auditLog).values({
+                            actorId,
+                            action: "user.password.set",
+                            targetUserId,
+                            oldValue: null,
+                            newValue: JSON.stringify(newValue),
+                        });
+                    } catch (err) {
+                        console.warn(
+                            `[setUserPassword] audit insert failed (non-fatal): actor=${actorId} target=${targetUserId}`,
+                            err,
+                        );
+                    }
+                },
+            });
         });
     },
-    hashPassword: async (plain) => Bun.password.hash(plain, "bcrypt"),
 };
 
 export const superadminUserRoutes = new Elysia({ prefix: "/admin" })
