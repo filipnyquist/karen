@@ -627,6 +627,13 @@ export default {
         teamsBody:
             "Publag är grupper som samlar poäng tillsammans. Lagpoäng = summan av alla medlemmars individuella poäng. Skapa eller gå med i ett lag för att tävla ihop.",
         teamsCta: "Se publag",
+        // Förstasidesbanner som ber om felanmälningar medan sidan är
+        // helt ny. Mejlen går till projektansvarig.
+        feedbackNoticeTitle: "Hemsidan är helt ny",
+        feedbackNoticeBody:
+            "Hittat en bugg eller något som inte ser rätt ut? Hemsidan är mycket ny, så skicka gärna alla fel till ",
+        feedbackNoticeEmail: "driften@bthstudent.se",
+        feedbackNoticeThanks: "Tack för att du hjälper oss att förbättra den!",
     },
     invite: {
         adminInviteTitle: "Bjud in en användare",

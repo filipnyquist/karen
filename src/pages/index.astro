@@ -120,6 +120,26 @@ const eventsWithCounts = await Promise.all(
       </div>
     )}
 
+    <!-- Frontpage bug-report notice. Visible to everyone while the
+         site is still very new; emails go to the project lead so we
+         can fix things before they become a problem. -->
+    <div id="feedback-notice" class="bg-purple-50 dark:bg-purple-900/30 border border-purple-200 dark:border-purple-800 rounded-lg p-4 flex items-start gap-3">
+      <svg class="w-5 h-5 text-purple-600 dark:text-purple-400 shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+      </svg>
+      <div class="flex-1">
+        <p class="text-purple-800 dark:text-purple-200 font-medium">{t('home.feedbackNoticeTitle')}</p>
+        <p class="text-purple-700 dark:text-purple-300 text-sm mt-1">
+          {t('home.feedbackNoticeBody')}
+          <a
+            href={`mailto:${t('home.feedbackNoticeEmail')}`}
+            class="font-medium underline hover:text-purple-900 dark:hover:text-purple-100"
+          >{t('home.feedbackNoticeEmail')}</a>.
+        </p>
+        <p class="text-purple-600 dark:text-purple-400 text-xs mt-1">{t('home.feedbackNoticeThanks')}</p>
+      </div>
+    </div>
+
     <!-- Upcoming events -->
     <section>
       <div class="flex items-center justify-between mb-6">

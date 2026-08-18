@@ -624,6 +624,13 @@ export default {
         teamsBody:
             "Pub teams are groups that pool points together. Team score = the sum of all members' individual points. Create or join a team to compete together.",
         teamsCta: "View teams",
+        // Frontpage banner asking for bug reports while the site is
+        // still very new. Email goes to the project lead.
+        feedbackNoticeTitle: "This website is brand new",
+        feedbackNoticeBody:
+            "Spotted a bug or something that doesn't look right? The site is very new, so please email any issues to ",
+        feedbackNoticeEmail: "driften@bthstudent.se",
+        feedbackNoticeThanks: "Thanks for helping us improve it!",
     },
     invite: {
         // Admin UI: invite a new user

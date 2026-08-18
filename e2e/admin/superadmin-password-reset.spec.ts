@@ -91,7 +91,7 @@ test.describe("Superadmin password reset", () => {
         const bobSession = await page
             .context()
             .cookies()
-            .then((cookies) => cookies.find((c) => c.name === "session"));
+            .then((cookies) => cookies.find((c) => c.name === "session_token"));
         expect(bobSession).toBeTruthy();
 
         // Switch to superadmin and reset bob's password.
@@ -165,11 +165,16 @@ test.describe("Superadmin password reset", () => {
         // Find bob's row and click it to open the modal.
         const bobRow = page.locator("tr", { hasText: TEST_USER_EMAILS.bob });
         await bobRow.click();
-        await page.waitForSelector("text=User Info", { state: "visible" });
+        // "User Info" section header — locale-agnostic matcher so the
+        // test passes under both sv-SE (renders "Användarinfo") and en-US
+        // (renders "User Info"). See playwright.config.ts `locale`.
+        await page.waitForSelector("text=/user info|användarinfo/i", {
+            state: "visible",
+        });
 
         // The Change password button should be visible.
         const pwButton = page.locator("button", {
-            hasText: /change password/i,
+            hasText: /change password|byt lösenord/i,
         });
         await expect(pwButton).toBeVisible();
 
@@ -178,10 +183,11 @@ test.describe("Superadmin password reset", () => {
         const newPassword = "E2EPanePass1";
         await page.locator('input[type="password"]').first().fill(newPassword);
         await page.locator('input[type="password"]').nth(1).fill(newPassword);
-        await page.locator("button", { hasText: /^save$/i }).click();
+        await page.locator("button", { hasText: /^(save|spara)$/i }).click();
 
-        // Wait for the success message.
-        await page.waitForSelector("text=/password updated|updated/i", {
+        // Wait for the success message — locale-agnostic ("Password
+        // updated" / "Lösenord uppdaterat").
+        await page.waitForSelector("text=/password updated|lösenord uppdaterat/i", {
             state: "visible",
         });
 
@@ -199,10 +205,13 @@ test.describe("Superadmin password reset", () => {
 
         const bobRow = page.locator("tr", { hasText: TEST_USER_EMAILS.bob });
         await bobRow.click();
-        await page.waitForSelector("text=User Info", { state: "visible" });
+        // Locale-agnostic; see comment in the matching modal test above.
+        await page.waitForSelector("text=/user info|användarinfo/i", {
+            state: "visible",
+        });
 
         const pwButton = page.locator("button", {
-            hasText: /change password/i,
+            hasText: /change password|byt lösenord/i,
         });
         await expect(pwButton).toHaveCount(0);
     });

@@ -1,8 +1,10 @@
 // src/api/routes/superadminUsers.ts
 //
 // Superadmin-only mutations on user accounts. Mounted from `adminRoutes`
-// so it inherits the `/admin` prefix and the audit-log tier boundary;
-// plain admins see 403 here.
+// (already prefixed with `/admin`), so this file deliberately does NOT
+// set its own prefix — doing so would double up to `/api/admin/admin`
+// and the password reset route would never resolve. Mounting detail
+// lives in `src/api/routes/admin.ts`.
 //
 // Currently exposes one route: PUT /api/admin/users/:id/password — a full
 // password reset that hash-rotates the target user's password and wipes
@@ -161,7 +163,7 @@ const defaultDeps: SetPasswordDeps = {
     },
 };
 
-export const superadminUserRoutes = new Elysia({ prefix: "/admin" })
+export const superadminUserRoutes = new Elysia()
     .derive(superadminDerive)
     .put(
         "/users/:id/password",
