@@ -90,7 +90,7 @@ export async function createInvitation(
         })
         .returning();
 
-    await sendInvitationEmail({
+    sendInvitationEmail({
         to: normalizedEmail,
         baseUrl: config.baseUrl,
         token,
