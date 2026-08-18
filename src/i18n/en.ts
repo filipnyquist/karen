@@ -586,6 +586,11 @@ export default {
         statusPending: "Pending",
         statusUnclaimed: "Unclaimed",
         approve: "Approve",
+        manuallyMigrate: "Manually migrate",
+        manuallyMigratePrompt:
+            "Enter the UUID of the real user to migrate this legacy account to:",
+        manuallyMigrateHelp:
+            "Use this for accounts where the user can't submit a request themselves.",
         noResults: "No results",
         searchPlaceholder: "Search by email or nickname...",
         "filter.all": "All",
