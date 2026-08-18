@@ -6,6 +6,7 @@ import { AppError } from "../api/middleware/error";
 import { config } from "../config";
 import { db } from "../db";
 import { sessions, users, verificationPins } from "../db/schema";
+import { hashPassword } from "../utils/password";
 import {
     generateSessionToken,
     generateToken,
@@ -56,7 +57,7 @@ export async function createUser(
     if (existing.length > 0)
         throw new AppError("Email already registered", 409, "EMAIL_TAKEN");
 
-    const passwordHash = await Bun.password.hash(password, "bcrypt");
+    const passwordHash = await hashPassword(password);
     const [user] = await db
         .insert(users)
         .values({ email, passwordHash, name, nickname })

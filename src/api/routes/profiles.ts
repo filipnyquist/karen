@@ -6,6 +6,7 @@ import { db } from "../../db";
 import { sessions, users } from "../../db/schema";
 import { extractSessionToken } from "../../utils/cookies";
 import { parseDob } from "../../utils/dob";
+import { hashPassword } from "../../utils/password";
 import { isStrongPassword } from "../../utils/validation";
 import { authDerive } from "../middleware/auth";
 import { AppError } from "../middleware/error";
@@ -145,7 +146,7 @@ export const profileRoutes = new Elysia({ prefix: "/profiles" })
                 );
             }
 
-            const newHash = await Bun.password.hash(body.newPassword, "bcrypt");
+            const newHash = await hashPassword(body.newPassword);
             await db
                 .update(users)
                 .set({ passwordHash: newHash, updatedAt: new Date() })

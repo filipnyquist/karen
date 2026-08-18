@@ -206,4 +206,50 @@ test.describe("Superadmin password reset", () => {
         });
         await expect(pwButton).toHaveCount(0);
     });
+
+    // Reproduction for the production 500 we couldn't reproduce
+    // locally: superadmin resets bob's password to a 19-char ASCII
+    // value with mixed case + digits, the exact shape sent against
+    // karen.bthstudent.se. If this passes in CI/dev but the prod
+    // container still 500s, the bug is environment-specific.
+    test("production-shaped reset: 19-char mixed-case/digit password succeeds", async ({
+        page,
+    }) => {
+        await login(page, "superadmin");
+
+        const usersRes = await browserFetch(page, "GET", "/api/admin/users");
+        expect(usersRes.ok).toBeTruthy();
+        const users = usersRes.body as Array<{
+            id: string;
+            email: string;
+        }>;
+        const bob = users.find((u) => u.email === TEST_USER_EMAILS.bob);
+        expect(bob).toBeTruthy();
+        const bobId = bob?.id as string;
+
+        // Same shape as the production failure: 19 ASCII chars,
+        // uppercase + lowercase + digit, well under bcrypt's 72-byte
+        // limit, strong enough to pass `isStrongPassword`.
+        const prodShapedPassword = "TempLosenord467588";
+
+        const putRes = await browserFetch(
+            page,
+            "PUT",
+            `/api/admin/users/${bobId}/password`,
+            {
+                password: prodShapedPassword,
+                confirmPassword: prodShapedPassword,
+            },
+        );
+        expect(
+            putRes.ok,
+            `reset failed: ${putRes.status} ${JSON.stringify(putRes.body)}`,
+        ).toBeTruthy();
+
+        // Bob can log in with the new password — proves the hash
+        // actually landed.
+        await logout(page);
+        await login(page, "bob");
+        expect(new URL(page.url()).pathname).toBe("/");
+    });
 });
