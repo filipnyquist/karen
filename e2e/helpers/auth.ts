@@ -43,7 +43,7 @@ export const TEST_USER_KEYS = [
 ] as const;
 export type TestUserKey = (typeof TEST_USER_KEYS)[number];
 
-const TEST_USER_EMAILS: Record<TestUserKey, string> = {
+export const TEST_USER_EMAILS: Record<TestUserKey, string> = {
     admin: "admin@karen.se",
     superadmin: "superadmin@karen.se",
     alice: "alice@karen.se",
