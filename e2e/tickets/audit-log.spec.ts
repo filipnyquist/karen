@@ -101,8 +101,8 @@ test.describe("Ticket audit log", () => {
         expect(bob).toBeTruthy();
 
         // Bob logs in to fetch his tickets. Other test files (e.g.
-// superadmin-password-reset) rotate bob's password via the
-// superadmin API, so reset it back to a known value first.
+        // superadmin-password-reset) rotate bob's password via the
+        // superadmin API, so reset it back to a known value first.
         await page.context().clearCookies();
         await login(page, "superadmin");
         const usersRes2 = await browserGet(page, "/api/admin/users");
