@@ -75,6 +75,10 @@ export default function AdminUserModal({
     const [copyState, setCopyState] = useState<"idle" | "copied" | "error">(
         "idle",
     );
+    const [pwOpen, setPwOpen] = useState(false);
+    const [pwValue, setPwValue] = useState("");
+    const [pwConfirm, setPwConfirm] = useState("");
+    const [pwSubmitting, setPwSubmitting] = useState(false);
 
     async function copyUserId() {
         try {
@@ -165,6 +169,39 @@ export default function AdminUserModal({
             const errMsg = err instanceof Error ? err.message : String(err);
 
             setError(errMsg);
+        }
+    }
+
+    async function changePassword() {
+        clearMsgs();
+        if (!pwValue) {
+            setError(t["admin.passwordRequired"] || "Password is required");
+            return;
+        }
+        setPwSubmitting(true);
+        try {
+            const res = await fetch(`/api/admin/users/${userId}/password`, {
+                method: "PUT",
+                headers: { "Content-Type": "application/json" },
+                credentials: "same-origin",
+                body: JSON.stringify({
+                    password: pwValue,
+                    confirmPassword: pwConfirm,
+                }),
+            });
+            if (!res.ok) {
+                const d = await res.json();
+                throw new Error(d.error || t["common.failed"] || "Failed");
+            }
+            setSuccess(t["admin.passwordChanged"] || "Password updated");
+            setPwOpen(false);
+            setPwValue("");
+            setPwConfirm("");
+        } catch (err) {
+            const errMsg = err instanceof Error ? err.message : String(err);
+            setError(errMsg);
+        } finally {
+            setPwSubmitting(false);
         }
     }
 
@@ -532,6 +569,89 @@ export default function AdminUserModal({
                         >
                             {t["common.saveChanges"] || "Save changes"}
                         </button>
+                        {currentUserIsSuperadmin && (
+                            <div class="pt-2 border-t border-gray-200 dark:border-gray-700">
+                                <button
+                                    type="button"
+                                    onClick={() => setPwOpen((o) => !o)}
+                                    class="text-sm font-medium text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white"
+                                >
+                                    {t["admin.changePassword"] ||
+                                        "Change password"}
+                                </button>
+                                {pwOpen && (
+                                    <div class="mt-3 space-y-3 rounded-md border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50 p-3">
+                                        <p class="text-xs text-gray-500 dark:text-gray-400">
+                                            {t["admin.changePasswordHelp"] ||
+                                                "Set a new password for this user. They will be logged out of all devices."}
+                                        </p>
+                                        <div>
+                                            <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">
+                                                {t["admin.newPasswordLabel"] ||
+                                                    "New password"}
+                                            </label>
+                                            <input
+                                                type="password"
+                                                value={pwValue}
+                                                onInput={(e) =>
+                                                    setPwValue(
+                                                        (
+                                                            e.target as HTMLInputElement
+                                                        ).value,
+                                                    )
+                                                }
+                                                class="w-full rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white px-2 py-1 text-sm"
+                                            />
+                                        </div>
+                                        <div>
+                                            <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">
+                                                {t[
+                                                    "admin.confirmPasswordLabel"
+                                                ] || "Confirm new password"}
+                                            </label>
+                                            <input
+                                                type="password"
+                                                value={pwConfirm}
+                                                onInput={(e) =>
+                                                    setPwConfirm(
+                                                        (
+                                                            e.target as HTMLInputElement
+                                                        ).value,
+                                                    )
+                                                }
+                                                class="w-full rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white px-2 py-1 text-sm"
+                                            />
+                                        </div>
+                                        <div class="flex gap-2">
+                                            <button
+                                                type="button"
+                                                onClick={changePassword}
+                                                disabled={
+                                                    pwSubmitting ||
+                                                    !pwValue ||
+                                                    !pwConfirm
+                                                }
+                                                class="px-3 py-1 rounded-md bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 disabled:opacity-50"
+                                            >
+                                                {t["common.save"] || "Save"}
+                                            </button>
+                                            <button
+                                                type="button"
+                                                onClick={() => {
+                                                    setPwOpen(false);
+                                                    setPwValue("");
+                                                    setPwConfirm("");
+                                                    clearMsgs();
+                                                }}
+                                                class="px-3 py-1 rounded-md bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-200 text-sm hover:bg-gray-300 dark:hover:bg-gray-600"
+                                            >
+                                                {t["common.cancel"] || "Cancel"}
+                                            </button>
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+                        )}
                     </section>
 
                     {/* Educations */}
