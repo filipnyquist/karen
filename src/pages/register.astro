@@ -26,17 +26,28 @@ if (turnstileSitekey) {
 const registerScript = `(function(){
   const turnstileSitekey = ${JSON.stringify(turnstileSitekey)};
   const bthEmailBlocked = ${JSON.stringify(t('auth.bthEmailBlocked'))};
+  const fullNameMessage = ${JSON.stringify(t('auth.firstAndLastNameRequired'))};
   const errorMessages = {
     BTH_BLOCKED: ${JSON.stringify(t('auth.bthEmailBlocked'))},
     BAD_REQUEST: ${JSON.stringify(t('auth.registerFailed') || 'Registration failed')},
     CONFLICT: ${JSON.stringify(t('auth.emailTaken') || 'Email already registered')}
   };
+  function isFullName(value) {
+    const parts = value.trim().split(/\\s+/).filter(Boolean);
+    if (parts.length < 2) return false;
+    return parts[parts.length - 1].length > 1;
+  }
   document.getElementById('register-form')?.addEventListener('submit', async (e) => {
     e.preventDefault();
     const form = e.target;
     const email = form.email.value.trim().toLowerCase();
     if (email.endsWith('@student.bth.se') || email.endsWith('@bthstudent.se')) {
       const params = new URLSearchParams({ error: bthEmailBlocked });
+      window.location.href = '/register?' + params;
+      return;
+    }
+    if (!isFullName(form.name.value)) {
+      const params = new URLSearchParams({ error: fullNameMessage });
       window.location.href = '/register?' + params;
       return;
     }

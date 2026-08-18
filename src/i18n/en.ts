@@ -77,6 +77,7 @@ export default {
         alreadyVerified: "You're already verified!",
         bthEmailBlocked:
             "You cannot register with a @student.bth.se/@bthstudent.se email, you need to use a personal one.",
+        firstAndLastNameRequired: "Enter both first and last name",
         verified: "Verified student/alumni",
         notVerified: "Not verified",
         studentVerificationRequired:

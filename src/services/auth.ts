@@ -191,9 +191,10 @@ export async function logout(token: string): Promise<true> {
 /**
  * Issue a verification email to a logged-in user.
  *
- * Restricted to the user's own email address — sending a verification
- * code to a different address would let a logged-in attacker weaponize
- * the BTH-student verification flow.
+ * Restricted to BTH-domain addresses (@student.bth.se / @bthstudent.se).
+ * The domain gate alone is sufficient: only someone with access to a BTH
+ * student mailbox can open the verification link, so we don't need to
+ * also enforce that the address matches the user's account email.
  */
 export async function requestVerification(
     userId: string,
@@ -201,8 +202,7 @@ export async function requestVerification(
     lang: Lang = "sv",
 ): Promise<true> {
     // Lowercase before the BTH-domain check so Foo@STUDENT.BTH.SE is
-    // recognised as a BTH address. `users.email` is stored lowercase at
-    // signup, so the equality compare below matches it exactly.
+    // recognised as a BTH address.
     email = email.trim().toLowerCase();
     if (!isBthEmail(email))
         throw new AppError(
@@ -212,18 +212,11 @@ export async function requestVerification(
         );
 
     const [user] = await db
-        .select({ id: users.id, email: users.email })
+        .select({ id: users.id })
         .from(users)
         .where(eq(users.id, userId))
         .limit(1);
     if (!user) throw new AppError("Not authenticated", 401, "UNAUTHORIZED");
-
-    if (user.email.toLowerCase() !== email.toLowerCase())
-        throw new AppError(
-            "Email must match your account email",
-            403,
-            "EMAIL_MISMATCH",
-        );
 
     const token = generateToken();
     await db.insert(verificationPins).values({
