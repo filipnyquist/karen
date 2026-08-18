@@ -90,6 +90,16 @@ Astro.csp?.insertScriptHash(sha256ScriptHash(loginScript));
         </div>
       )}
 
+      <div class="mb-4 p-3 rounded-md bg-blue-50 dark:bg-blue-950 border border-blue-200 dark:border-blue-800">
+        <p class="text-sm text-blue-700 dark:text-blue-300">
+          {t('auth.legacyAccountNotice')}
+          {' '}
+          <a href="/migrate" class="font-medium underline hover:no-underline">
+            {t('common.migrate')}
+          </a>
+        </p>
+      </div>
+
       <form id="login-form" method="post" action="/login" data-sitekey={turnstileSitekey} class="space-y-4">
         <div>
           <label for="email" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">

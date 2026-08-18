@@ -61,6 +61,8 @@ export default {
         emailTaken: "Email already registered",
         noAccount: "Don't have an account?",
         hasAccount: "Already have an account?",
+        legacyAccountNotice:
+            "If you had an old account you need to re-register, then you can import your old account history.",
         verifyEmail: "Please check your email to verify your account.",
         emailVerified: "Email verified!",
         verifyStudent: "Verify student status",

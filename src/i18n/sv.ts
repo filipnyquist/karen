@@ -61,6 +61,8 @@ export default {
         emailTaken: "E-postadressen är redan registrerad",
         noAccount: "Har du inget konto?",
         hasAccount: "Har du redan ett konto?",
+        legacyAccountNotice:
+            "Om du hade ett gammalt konto behöver du registrera dig igen, sedan kan du importera din gamla kontoshistorik.",
         verifyEmail: "Kontrollera din e-post för att verifiera ditt konto.",
         emailVerified: "E-post verifierad!",
         verifyStudent: "Verifiera studentstatus",
