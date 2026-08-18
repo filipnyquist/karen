@@ -30,7 +30,8 @@ export type AuditAction =
     | "reference.education_type.create"
     | "reference.education_type.update"
     | "reference.education_type.delete"
-    | "team.regenerate_code";
+    | "team.regenerate_code"
+    | "migration.admin.manual";
 
 export interface AuditPayload {
     oldValue?: unknown;

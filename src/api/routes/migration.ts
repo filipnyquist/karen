@@ -15,6 +15,7 @@ import {
     workerRegistrations,
 } from "../../db/schema";
 import { detectLanguage } from "../../i18n";
+import { recordAdminAction } from "../../services/auditLog";
 import { sendMigrationLinkEmail } from "../../services/email";
 import { adminDerive, authDerive } from "../middleware/auth";
 import { AppError } from "../middleware/error";
@@ -270,54 +271,143 @@ export const migrationRoutes = new Elysia({ prefix: "/migration" })
 
                 return { total, claimed, pending, mappings: allMappings };
             })
-            .post("/admin-approve", async ({ body }) => {
+            .post("/admin-approve", async ({ body, user: actor }) => {
                 const { legacyId, userId } = body as {
                     legacyId: string;
                     userId: string;
                 };
-                if (!legacyId || !userId)
-                    throw new AppError(
-                        "Legacy ID and user ID are required",
-                        400,
-                        "IDS_REQUIRED",
-                    );
-
-                const [mapping] = await db
-                    .select()
-                    .from(legacyMappings)
-                    .where(eq(legacyMappings.id, legacyId))
-                    .limit(1);
-
-                if (!mapping)
-                    throw new AppError(
-                        "Legacy mapping not found",
-                        404,
-                        "MAPPING_NOT_FOUND",
-                    );
-                if (mapping.realUserId)
-                    throw new AppError(
-                        "Already claimed",
-                        409,
-                        "ALREADY_CLAIMED",
-                    );
-
-                const [realUser] = await db
-                    .select()
-                    .from(users)
-                    .where(eq(users.id, userId))
-                    .limit(1);
-                if (!realUser)
-                    throw new AppError("User not found", 404, "USER_NOT_FOUND");
-
-                return await executeMerge(
-                    mapping.placeholderUserId as string,
-                    userId,
-                    mapping.id,
-                );
+                return adminApproveMigration(legacyId, userId, actor.id, {
+                    findMapping: async (id) => {
+                        const [row] = await db
+                            .select()
+                            .from(legacyMappings)
+                            .where(eq(legacyMappings.id, id))
+                            .limit(1);
+                        return row;
+                    },
+                    findUser: async (id) => {
+                        const [row] = await db
+                            .select()
+                            .from(users)
+                            .where(eq(users.id, id))
+                            .limit(1);
+                        return row;
+                    },
+                    executeMerge,
+                    recordAudit: async (
+                        actorId,
+                        targetUserId,
+                        oldValue,
+                        newValue,
+                    ) => {
+                        await recordAdminAction(
+                            actorId,
+                            "migration.admin.manual",
+                            targetUserId,
+                            { oldValue, newValue },
+                        );
+                    },
+                });
             }),
     );
 
 // ─── Core merge logic ───
+export interface AdminApproveDeps {
+    findMapping: (id: string) => Promise<
+        | {
+              id: string;
+              placeholderUserId: string | null;
+              realUserId: string | null;
+          }
+        | undefined
+    >;
+    findUser: (id: string) => Promise<
+        | {
+              id: string;
+              isLegacy: boolean | null;
+          }
+        | undefined
+    >;
+    executeMerge: (
+        placeholderId: string,
+        realUserId: string,
+        mappingId: string,
+    ) => Promise<{ success: boolean; stats: Record<string, number> }>;
+    recordAudit: (
+        actorId: string,
+        targetUserId: string,
+        oldValue: unknown,
+        newValue: unknown,
+    ) => Promise<void>;
+}
+
+/**
+ * Admin-side migration approval: validates inputs, runs the merge
+ * transaction, and records the audit entry. Extracted from the route
+ * so the validation/guard logic can be unit-tested without Elysia.
+ */
+export async function adminApproveMigration(
+    legacyId: string,
+    userId: string,
+    actorId: string,
+    deps: AdminApproveDeps,
+) {
+    if (!legacyId || !userId)
+        throw new AppError(
+            "Legacy ID and user ID are required",
+            400,
+            "IDS_REQUIRED",
+        );
+
+    const mapping = await deps.findMapping(legacyId);
+    if (!mapping)
+        throw new AppError(
+            "Legacy mapping not found",
+            404,
+            "MAPPING_NOT_FOUND",
+        );
+    if (mapping.realUserId)
+        throw new AppError("Already claimed", 409, "ALREADY_CLAIMED");
+
+    const realUser = await deps.findUser(userId);
+    if (!realUser) throw new AppError("User not found", 404, "USER_NOT_FOUND");
+
+    // Refuse to merge into a legacy placeholder. A legacy account has
+    // `passwordHash = null`, so the post-merge user can't log in. Catch
+    // this here with a friendly message instead of failing deep inside
+    // executeMerge.
+    if (realUser.isLegacy) {
+        throw new AppError(
+            "Cannot migrate into a legacy placeholder account",
+            400,
+            "LEGACY_USER_CANNOT_BE_TARGET",
+        );
+    }
+
+    const result = await deps.executeMerge(
+        mapping.placeholderUserId as string,
+        userId,
+        mapping.id,
+    );
+
+    // Record the audit entry AFTER the merge completes so the target
+    // user really is the post-merge account. The placeholder is deleted
+    // by executeMerge, so we can't point targetUserId there — use the
+    // real userId and record the placeholder id inside newValue for
+    // context.
+    await deps.recordAudit(
+        actorId,
+        userId,
+        { legacyId },
+        {
+            migratedAt: new Date().toISOString(),
+            placeholderUserId: mapping.placeholderUserId,
+        },
+    );
+
+    return result;
+}
+
 async function executeMerge(
     placeholderId: string,
     realUserId: string,
