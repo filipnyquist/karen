@@ -46,7 +46,32 @@ async function browserFetch(
     );
 }
 
+// `.serial` because every test in this file rotates bob's password.
+// Running them in parallel causes one test's reset to overwrite another's
+// password, leaving the `login(page, "bob", newPassword)` assertions
+// racing against a stale value.
+test.describe.configure({ mode: "serial" });
 test.describe("Superadmin password reset", () => {
+    // Bob's password gets rotated by every test in this file. Pin it
+    // back to a known value before each test so the helpers below can
+    // reliably log bob in without a previous run having changed it.
+    test.beforeEach(async ({ page }) => {
+        await login(page, "superadmin");
+        const usersRes = await browserFetch(page, "GET", "/api/admin/users");
+        const users = usersRes.body as Array<{
+            id: string;
+            email: string;
+        }>;
+        const bob = users.find((u) => u.email === TEST_USER_EMAILS.bob);
+        const seedPassword = "BobSeedPass1";
+        await browserFetch(
+            page,
+            "PUT",
+            `/api/admin/users/${bob?.id}/password`,
+            { password: seedPassword, confirmPassword: seedPassword },
+        );
+        await page.context().clearCookies();
+    });
     test("superadmin can reset a user's password via the API", async ({
         page,
     }) => {
@@ -77,7 +102,7 @@ test.describe("Superadmin password reset", () => {
 
         // Bob should now be able to log in with the new password.
         await logout(page);
-        await login(page, "bob");
+        await login(page, "bob", newPassword);
         // If we reached here, login succeeded.
         expect(new URL(page.url()).pathname).toBe("/");
     });
@@ -86,12 +111,13 @@ test.describe("Superadmin password reset", () => {
         page,
         context,
     }) => {
-        // First, log bob in so he has a session.
-        await login(page, "bob");
+        // First, log bob in so he has a session. Bob's password was
+        // pinned by the describe-level beforeEach.
+        await login(page, "bob", "BobSeedPass1");
         const bobSession = await page
             .context()
             .cookies()
-            .then((cookies) => cookies.find((c) => c.name === "session"));
+            .then((cookies) => cookies.find((c) => c.name === "session_token"));
         expect(bobSession).toBeTruthy();
 
         // Switch to superadmin and reset bob's password.
@@ -129,7 +155,7 @@ test.describe("Superadmin password reset", () => {
                 },
             ]);
         }
-        const meRes = await browserFetch(page, "GET", "/api/profile/me");
+        const meRes = await browserFetch(page, "GET", "/api/profiles/me");
         expect(meRes.status).toBe(401);
     });
 
@@ -158,18 +184,27 @@ test.describe("Superadmin password reset", () => {
 
     test("superadmin sees the Change password button in the user's modal", async ({
         page,
+        context,
     }) => {
         await login(page, "superadmin");
         await page.goto("/admin");
+        // Wait for Preact to wire the row onClick handlers — clicking
+        // before hydration is a silent no-op and the modal never opens.
+        await expect(page.locator('[data-hydrated="true"]')).toBeAttached({
+            timeout: 10_000,
+        });
 
         // Find bob's row and click it to open the modal.
         const bobRow = page.locator("tr", { hasText: TEST_USER_EMAILS.bob });
         await bobRow.click();
-        await page.waitForSelector("text=User Info", { state: "visible" });
+        // `sv-SE` locale is pinned in playwright.config.ts — the modal
+        // renders "Användarinfo" / "Byt lösenord" (not the English
+        // fallbacks the component uses).
+        await page.waitForSelector("text=Användarinfo", { state: "visible" });
 
         // The Change password button should be visible.
         const pwButton = page.locator("button", {
-            hasText: /change password/i,
+            hasText: /byt lösenord/i,
         });
         await expect(pwButton).toBeVisible();
 
@@ -178,16 +213,17 @@ test.describe("Superadmin password reset", () => {
         const newPassword = "E2EPanePass1";
         await page.locator('input[type="password"]').first().fill(newPassword);
         await page.locator('input[type="password"]').nth(1).fill(newPassword);
-        await page.locator("button", { hasText: /^save$/i }).click();
+        await page.locator("button", { hasText: /^spara$/i }).click();
 
         // Wait for the success message.
-        await page.waitForSelector("text=/password updated|updated/i", {
+        await page.waitForSelector("text=/lösenord uppdaterat|uppdaterat/i", {
             state: "visible",
         });
 
-        // Verify the user can log in with the new password.
-        await logout(page);
-        await login(page, "bob");
+        // Clear cookies directly — the modal's fixed overlay intercepts
+        // clicks on the navbar "Logga ut" button.
+        await context.clearCookies();
+        await login(page, "bob", newPassword);
         expect(new URL(page.url()).pathname).toBe("/");
     });
 
@@ -196,13 +232,16 @@ test.describe("Superadmin password reset", () => {
     }) => {
         await login(page, "admin");
         await page.goto("/admin");
+        await expect(page.locator('[data-hydrated="true"]')).toBeAttached({
+            timeout: 10_000,
+        });
 
         const bobRow = page.locator("tr", { hasText: TEST_USER_EMAILS.bob });
         await bobRow.click();
-        await page.waitForSelector("text=User Info", { state: "visible" });
+        await page.waitForSelector("text=Användarinfo", { state: "visible" });
 
         const pwButton = page.locator("button", {
-            hasText: /change password/i,
+            hasText: /byt lösenord/i,
         });
         await expect(pwButton).toHaveCount(0);
     });
@@ -249,7 +288,7 @@ test.describe("Superadmin password reset", () => {
         // Bob can log in with the new password — proves the hash
         // actually landed.
         await logout(page);
-        await login(page, "bob");
+        await login(page, "bob", prodShapedPassword);
         expect(new URL(page.url()).pathname).toBe("/");
     });
 });

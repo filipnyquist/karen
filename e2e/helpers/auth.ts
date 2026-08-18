@@ -76,13 +76,27 @@ export function getMigrationToken(): string {
     return secrets.migrationToken;
 }
 
-export async function login(page: Page, userKey: TestUserKey = "alice") {
+export async function login(
+    page: Page,
+    userKey: TestUserKey = "alice",
+    password?: string,
+) {
     const email = TEST_USER_EMAILS[userKey];
-    const password = getPasswordFor(email);
+    // Override the password when the test has rotated it (e.g. via the
+    // superadmin password reset endpoint). Default to whatever the seed
+    // script generated for this user.
+    const pw = password ?? getPasswordFor(email);
+    // The login.astro page redirects to "/" when the cookie jar already
+    // holds a valid session. Calling login() twice in a row (e.g. the
+    // "reset then log in as the target user" pattern in
+    // superadmin-password-reset.spec.ts) would otherwise end up at the
+    // home page with `#email` missing. Clearing cookies is the safer
+    // pre-condition.
+    await page.context().clearCookies();
     await page.goto("/login");
     await page.waitForLoadState("networkidle");
     await page.locator("#email").fill(email);
-    await page.locator("#password").fill(password);
+    await page.locator("#password").fill(pw);
     await page.locator('#login-form button[type="submit"]').click();
     await page.waitForURL("/");
 }

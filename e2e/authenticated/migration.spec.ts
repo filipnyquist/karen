@@ -1,6 +1,11 @@
 import { expect, test } from "@playwright/test";
 import { getMigrationToken, login } from "../helpers/auth";
 
+// `.serial` because the second test in this file consumes the only
+// seeded legacy mapping — running it in parallel with the others would
+// race against `admin-manual-migration.spec.ts` which also targets
+// that same row.
+test.describe.configure({ mode: "serial" });
 test.describe("Migration", () => {
     test("no match for unknown email", async ({ page }) => {
         await login(page, "alice");

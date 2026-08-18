@@ -73,6 +73,11 @@ async function fetchMappings(
     return res.body as MigrationStatus;
 }
 
+// `.serial` so the tests in this file don't race against each other —
+// the first test reads the unclaimed mapping list, the second test
+// claims a mapping, so running them in parallel would flake the first
+// test whenever the second wins the race.
+test.describe.configure({ mode: "serial" });
 test.describe("Admin manual migration", () => {
     test("Manually migrate button is visible on every unclaimed row", async ({
         page,
