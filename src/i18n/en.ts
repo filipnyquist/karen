@@ -470,6 +470,13 @@ export default {
         roleUser: "User",
         roleAdmin: "Admin",
         roleSuperadmin: "Superadmin",
+        changePassword: "Change password",
+        changePasswordHelp:
+            "Set a new password for this user. They will be logged out of all devices.",
+        newPasswordLabel: "New password",
+        confirmPasswordLabel: "Confirm new password",
+        passwordChanged: "Password updated",
+        passwordRequired: "Password is required",
         auditLog: "Audit log",
         when: "When",
         who: "Who",

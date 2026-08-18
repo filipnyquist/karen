@@ -473,6 +473,13 @@ export default {
         roleUser: "Användare",
         roleAdmin: "Administratör",
         roleSuperadmin: "Superadministratör",
+        changePassword: "Byt lösenord",
+        changePasswordHelp:
+            "Ange ett nytt lösenord för den här användaren. De loggas ut från alla enheter.",
+        newPasswordLabel: "Nytt lösenord",
+        confirmPasswordLabel: "Bekräfta nytt lösenord",
+        passwordChanged: "Lösenord uppdaterat",
+        passwordRequired: "Lösenord krävs",
         auditLog: "Granskningslogg",
         when: "Tidpunkt",
         who: "Vem",
