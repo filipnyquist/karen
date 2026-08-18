@@ -11,6 +11,7 @@ import {
     type ConsumeResetTxDeps,
     consumePasswordResetToken,
     hashToken,
+    isValidResetToken,
     type RequestResetDeps,
     requestPasswordReset,
 } from "./passwordReset";
@@ -160,9 +161,11 @@ describe("requestPasswordReset", () => {
 
         // The dispatched email uses the SAME plaintext token the row was hashed from.
         expect(calls.dispatchEmail.length).toBe(1);
+        // result.token is string|null (null when the email doesn't exist);
+        // narrow for the type checker.
         expect(calls.dispatchEmail[0]).toEqual({
             to: "alice@karen.se",
-            token: result.token,
+            token: result.token as string,
             lang: "en",
         });
     });
