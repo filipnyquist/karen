@@ -54,7 +54,10 @@ test.describe("Reward progress bar", () => {
             name: string;
         }>;
         const spring = events.find((e) => e.name === "Vårpub 2026");
-        if (!spring) test.skip(true, "Spring pub seed missing");
+        if (!spring) {
+            test.skip(true, "Spring pub seed missing");
+            return;
+        }
         await page.goto(`/event/${spring.id}`);
         await page.getByRole("link", { name: "Bobby" }).first().click();
         await expect(page).toHaveURL(/\/profile\//);
