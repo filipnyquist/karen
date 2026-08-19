@@ -36,6 +36,20 @@
             "when": 1787080601235,
             "tag": "0004_spicy_trish_tilby",
             "breakpoints": true
+        },
+        {
+            "idx": 5,
+            "version": "7",
+            "when": 1787194800000,
+            "tag": "0005_tombstone_user",
+            "breakpoints": true
+        },
+        {
+            "idx": 6,
+            "version": "7",
+            "when": 1787128431070,
+            "tag": "0006_aspiring_loki",
+            "breakpoints": true
         }
     ]
 }

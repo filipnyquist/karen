@@ -365,23 +365,36 @@ export const pubTeamMembers = pgTable(
 
 // ─── Legacy Migration ───
 
-export const legacyMappings = pgTable("legacy_mappings", {
-    id: uuid("id").defaultRandom().primaryKey(),
-    oldUserId: integer("old_user_id").notNull().unique(),
-    oldEmail: varchar("old_email", { length: 254 }).notNull(),
-    oldNickname: varchar("old_nickname", { length: 100 }),
-    placeholderUserId: uuid("placeholder_user_id").references(() => users.id, {
-        onDelete: "set null",
-    }),
-    realUserId: uuid("real_user_id").references(() => users.id),
-    migratedAt: timestamp("migrated_at", { withTimezone: true }),
-    migrationToken: varchar("migration_token", { length: 64 }),
-    migrationTokenExpiry: timestamp("migration_token_expiry", {
-        withTimezone: true,
-    }),
-    adminRequested: boolean("admin_requested").default(false),
-    adminRequestedReason: text("admin_requested_reason"),
-});
+export const legacyMappings = pgTable(
+    "legacy_mappings",
+    {
+        id: uuid("id").defaultRandom().primaryKey(),
+        oldUserId: integer("old_user_id").notNull().unique(),
+        oldEmail: varchar("old_email", { length: 254 }).notNull(),
+        oldNickname: varchar("old_nickname", { length: 100 }),
+        placeholderUserId: uuid("placeholder_user_id").references(
+            () => users.id,
+            {
+                onDelete: "set null",
+            },
+        ),
+        realUserId: uuid("real_user_id").references(() => users.id),
+        migratedAt: timestamp("migrated_at", { withTimezone: true }),
+        migrationToken: varchar("migration_token", { length: 64 }),
+        migrationTokenExpiry: timestamp("migration_token_expiry", {
+            withTimezone: true,
+        }),
+        adminRequested: boolean("admin_requested").default(false),
+        adminRequestedReason: text("admin_requested_reason"),
+        // Hot-path index for BaseLayout.astro's hasMigrated lookup. Fires on
+        // every authenticated SSR page render:
+        //   SELECT migrated_at FROM legacy_mappings
+        //   WHERE real_user_id = $1 AND migrated_at IS NOT NULL LIMIT 1;
+        // Postgres does NOT auto-index FK columns, so without this the
+        // query degrades to a seq scan once the table grows.
+    },
+    (table) => [index("legacy_mappings_real_user_id_idx").on(table.realUserId)],
+);
 
 // ─── Relations ───
 

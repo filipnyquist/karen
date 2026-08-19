@@ -10,6 +10,7 @@ export type AuditAction =
     | "user.role.change"
     | "user.password.set"
     | "user.password_reset"
+    | "user.delete"
     | "user.education.grant"
     | "user.education.grant.bulk"
     | "user.education.revoke"

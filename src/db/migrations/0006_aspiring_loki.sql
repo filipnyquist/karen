@@ -1,0 +1,1 @@
+CREATE INDEX "legacy_mappings_real_user_id_idx" ON "legacy_mappings" USING btree ("real_user_id");
