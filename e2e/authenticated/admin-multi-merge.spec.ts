@@ -98,11 +98,15 @@ test.describe("Admin multi-merge", () => {
         // would PK-violate.
         const usersRes = await browserFetch(page, "GET", "/api/admin/users");
         expect(usersRes.ok).toBeTruthy();
-        const users = usersRes.body as Array<{
-            id: string;
-            email: string;
-            isLegacy: boolean | null;
-        }>;
+        const users = (
+            usersRes.body as {
+                users: Array<{
+                    id: string;
+                    email: string;
+                    isLegacy: boolean | null;
+                }>;
+            }
+        ).users;
         const target = users.find(
             (u) => u.email === TEST_USER_EMAILS.bob && !u.isLegacy,
         );

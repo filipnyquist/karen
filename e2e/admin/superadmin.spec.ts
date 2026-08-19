@@ -55,7 +55,9 @@ test.describe("Superadmin role", () => {
         // Find bob's user id via the admin listing.
         const usersRes = await browserFetch(page, "GET", "/api/admin/users");
         expect(usersRes.ok).toBeTruthy();
-        const users = usersRes.body as Array<{ id: string; email: string }>;
+        const users = (
+            usersRes.body as { users: Array<{ id: string; email: string }> }
+        ).users;
         const bob = users.find((u) => u.email === "bob@karen.se");
         expect(bob).toBeTruthy();
 
@@ -88,7 +90,9 @@ test.describe("Superadmin role", () => {
         await page.waitForURL("/");
 
         const usersRes = await browserFetch(page, "GET", "/api/admin/users");
-        const users = usersRes.body as Array<{ id: string; email: string }>;
+        const users = (
+            usersRes.body as { users: Array<{ id: string; email: string }> }
+        ).users;
         const charlie = users.find((u) => u.email === "charlie@karen.se");
         expect(charlie).toBeTruthy();
 

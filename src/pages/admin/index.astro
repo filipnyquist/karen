@@ -4,8 +4,8 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
 import AdminDashboard from '../../islands/AdminDashboard';
 import { flattenTranslations } from '../../i18n/index';
 import { db } from '../../db';
-import { users, educationTypes } from '../../db/schema';
-import { eq } from 'drizzle-orm';
+import { users } from '../../db/schema';
+import { count, desc, eq } from 'drizzle-orm';
 import { isSuperadmin } from '../../api/middleware/auth';
 import { requireAdmin } from '../../lib/guards';
 
@@ -17,25 +17,32 @@ const currentUser = guard;
 
 const currentUserIsSuperadmin = isSuperadmin(currentUser.role);
 
-// Filter out legacy placeholder rows (created by the importer) so the
-// admin user table only shows real accounts. Legacy placeholders are
-// browsable via /admin/migrate.
-const allUsers = await db
-  .select({
-    id: users.id,
-    email: users.email,
-    name: users.name,
-    nickname: users.nickname,
-    role: users.role,
-    emailVerified: users.emailVerified,
-    verified: users.verified,
-    createdAt: users.createdAt,
-  })
-  .from(users)
-  .where(eq(users.isLegacy, false))
-  .orderBy(users.createdAt);
+// Bounded first page + total count. The island re-queries through
+// GET /api/admin/users on every search/sort/page change so SSR only
+// ships the initial paint.
+const PAGE_SIZE = 50;
+const userColumns = {
+  id: users.id,
+  email: users.email,
+  name: users.name,
+  nickname: users.nickname,
+  role: users.role,
+  emailVerified: users.emailVerified,
+  verified: users.verified,
+  createdAt: users.createdAt,
+};
 
-const eduTypes = await db.select().from(educationTypes);
+const [initialUsers, [{ total }]] = await Promise.all([
+  db
+    .select(userColumns)
+    .from(users)
+    .where(eq(users.isLegacy, false))
+    .orderBy(desc(users.createdAt))
+    .limit(PAGE_SIZE)
+    .offset(0),
+  db.select({ total: count() }).from(users).where(eq(users.isLegacy, false)),
+]);
+
 const translations = flattenTranslations(Astro.locals.translations as unknown as Record<string, unknown>);
 ---
 
@@ -78,6 +85,6 @@ const translations = flattenTranslations(Astro.locals.translations as unknown as
       </a>
     </div>
 
-    <AdminDashboard client:load initialUsers={allUsers} educationTypes={eduTypes} currentUserIsSuperadmin={currentUserIsSuperadmin} t={translations} />
+    <AdminDashboard client:load initialUsers={initialUsers} initialTotal={total} currentUserIsSuperadmin={currentUserIsSuperadmin} t={translations} />
   </div>
 </BaseLayout>

@@ -65,10 +65,14 @@ test.describe("Forgot password", () => {
         await login(page, "superadmin");
         const { getPasswordFor } = await import("../helpers/auth");
         const usersRes = await browserFetch(page, "GET", "/api/admin/users");
-        const users = usersRes.body as Array<{
-            id: string;
-            email: string;
-        }>;
+        const users = (
+            usersRes.body as {
+                users: Array<{
+                    id: string;
+                    email: string;
+                }>;
+            }
+        ).users;
         for (const key of ["bob", "charlie", "diana", "erik"] as const) {
             const email = TEST_USER_EMAILS[key];
             const u = users.find((x) => x.email === email);

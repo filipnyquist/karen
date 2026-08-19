@@ -1,6 +1,6 @@
 // src/api/routes/admin.ts
 
-import { and, desc, eq, ilike, or } from "drizzle-orm";
+import { and, asc, count, desc, eq, ilike, or } from "drizzle-orm";
 import { Elysia, t } from "elysia";
 import { db } from "../../db";
 import {
@@ -712,68 +712,92 @@ export const adminRoutes = new Elysia({ prefix: "/admin" })
     .get(
         "/users",
         async ({ query }) => {
-            const limit = parseInt(query?.limit ?? "50", 10);
-            const offset = parseInt(query?.offset ?? "0", 10);
+            // Server-driven admin user table: search by partial match on
+            // email/name/nickname, sort by any listed column, paginate. The
+            // legacy-placeholder filter is shared with the migration page.
+            const limit = Math.min(Math.max(query.limit ?? 50, 1), 200);
+            const offset = Math.max(query.offset ?? 0, 0);
+            const sortBy = query.sortBy ?? "createdAt";
+            const sortDir = query.sortDir ?? "desc";
 
-            // Legacy placeholder rows (created by import-legacy.ts, targeted
-            // for the migration flow at /admin/migrate) are filtered out of
-            // the admin user table — admins manage real accounts here. The
-            // dedicated migration page is the place to inspect placeholders.
-            const result = await db
-                .select({
-                    id: users.id,
-                    email: users.email,
-                    nickname: users.nickname,
-                    name: users.name,
-                    verified: users.verified,
-                    emailVerified: users.emailVerified,
-                    role: users.role,
-                    createdAt: users.createdAt,
-                })
-                .from(users)
-                .where(eq(users.isLegacy, false))
-                .limit(limit)
-                .offset(offset);
+            const filters = [eq(users.isLegacy, false)];
+            if (query.q?.trim()) {
+                // Escape LIKE wildcards so a literal `%` in the search term
+                // doesn't match everything. Postgres `ilike` recognises
+                // backslash as the default ESCAPE character.
+                const escaped = query.q
+                    .trim()
+                    .replace(/[\\%_]/g, (m) => `\\${m}`);
+                const term = `%${escaped}%`;
+                const search = or(
+                    ilike(users.email, term),
+                    ilike(users.name, term),
+                    ilike(users.nickname, term),
+                );
+                if (search) filters.push(search);
+            }
 
-            return result;
+            const orderColumn = {
+                email: users.email,
+                name: users.name,
+                nickname: users.nickname,
+                role: users.role,
+                verified: users.verified,
+                emailVerified: users.emailVerified,
+                createdAt: users.createdAt,
+            }[sortBy];
+            const orderExpr =
+                sortDir === "asc" ? asc(orderColumn) : desc(orderColumn);
+
+            const [rows, [{ total }]] = await Promise.all([
+                db
+                    .select({
+                        id: users.id,
+                        email: users.email,
+                        nickname: users.nickname,
+                        name: users.name,
+                        verified: users.verified,
+                        emailVerified: users.emailVerified,
+                        role: users.role,
+                        createdAt: users.createdAt,
+                    })
+                    .from(users)
+                    .where(and(...filters))
+                    .orderBy(orderExpr)
+                    .limit(limit)
+                    .offset(offset),
+                db
+                    .select({ total: count() })
+                    .from(users)
+                    .where(and(...filters)),
+            ]);
+
+            return { users: rows, total, limit, offset };
         },
         {
             query: t.Object({
-                limit: t.Optional(t.String()),
-                offset: t.Optional(t.String()),
+                q: t.Optional(t.String({ maxLength: 200 })),
+                sortBy: t.Optional(
+                    t.Union([
+                        t.Literal("email"),
+                        t.Literal("name"),
+                        t.Literal("nickname"),
+                        t.Literal("role"),
+                        t.Literal("verified"),
+                        t.Literal("emailVerified"),
+                        t.Literal("createdAt"),
+                    ]),
+                ),
+                sortDir: t.Optional(
+                    t.Union([t.Literal("asc"), t.Literal("desc")]),
+                ),
+                limit: t.Optional(t.Integer({ minimum: 1, maximum: 200 })),
+                offset: t.Optional(t.Integer({ minimum: 0 })),
             }),
         },
     )
     .get("/education-types", async () => {
         return db.select().from(educationTypes);
-    })
-    // Search users (same legacy-placeholder filter as the list endpoint —
-    // see comment on GET /users above for the rationale).
-    .get("/users/search/:query", async ({ params }) => {
-        const searchTerm = `%${params.query}%`;
-        return db
-            .select({
-                id: users.id,
-                email: users.email,
-                nickname: users.nickname,
-                name: users.name,
-                verified: users.verified,
-                emailVerified: users.emailVerified,
-                role: users.role,
-                createdAt: users.createdAt,
-            })
-            .from(users)
-            .where(
-                and(
-                    eq(users.isLegacy, false),
-                    or(
-                        ilike(users.email, searchTerm),
-                        ilike(users.name, searchTerm),
-                        ilike(users.nickname, searchTerm),
-                    ),
-                ),
-            )
-            .limit(50);
     })
     // User detail with educations + tickets
     .get("/users/:id", async ({ params }) => {

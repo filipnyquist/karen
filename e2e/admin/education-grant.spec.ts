@@ -129,7 +129,9 @@ test.describe("Admin bulk-grant education", () => {
 
         const list = await browserFetch(page, "GET", "/api/admin/users");
         expect(list.ok).toBeTruthy();
-        const users = list.body as Array<{ id: string; email: string }>;
+        const users = (
+            list.body as { users: Array<{ id: string; email: string }> }
+        ).users;
         const newbie = users.find((u) => u.email === "newbie@karen.se");
         const migrant = users.find((u) => u.email === "migrant@karen.se");
         expect(newbie).toBeDefined();
@@ -193,7 +195,9 @@ test.describe("Admin bulk-grant education", () => {
     }) => {
         await login(page, "superadmin");
         const list = await browserFetch(page, "GET", "/api/admin/users");
-        const users = list.body as Array<{ id: string; email: string }>;
+        const users = (
+            list.body as { users: Array<{ id: string; email: string }> }
+        ).users;
         const bob = users.find((u) => u.email === "bob@karen.se");
         expect(bob).toBeDefined();
         if (!bob) return;
