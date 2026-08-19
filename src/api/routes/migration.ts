@@ -1,6 +1,6 @@
 // src/api/routes/migration.ts
 
-import { eq, sql } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import { Elysia } from "elysia";
 import { config } from "../../config";
 import { db } from "../../db";
@@ -432,7 +432,34 @@ async function executeMerge(
             .set({ userId: realUserId })
             .where(eq(comments.userId, placeholderId));
 
-        // 3. Reassign pub team memberships
+        // 3. Reassign pub team memberships.
+        //
+        // The (team_id, user_id) PK protects against accidental double
+        // membership, which means a naive
+        //   UPDATE pub_team_members SET userId = realUserId WHERE userId = placeholderId
+        // PK-violates whenever the real user is *already* a member of any
+        // team the placeholder is also in. The same conflict arises when
+        // two placeholders are merged sequentially into the same real
+        // user and they share a team.
+        //
+        // Fix: drop the placeholder rows that would conflict first,
+        // then reassign the rest. Done as a subselect on the real
+        // user's current memberships to keep this transaction-safe
+        // (no race with concurrent merges of the same real user).
+        await tx
+            .delete(pubTeamMembers)
+            .where(
+                and(
+                    eq(pubTeamMembers.userId, placeholderId),
+                    inArray(
+                        pubTeamMembers.teamId,
+                        tx
+                            .select({ teamId: pubTeamMembers.teamId })
+                            .from(pubTeamMembers)
+                            .where(eq(pubTeamMembers.userId, realUserId)),
+                    ),
+                ),
+            );
         await tx
             .update(pubTeamMembers)
             .set({ userId: realUserId })
