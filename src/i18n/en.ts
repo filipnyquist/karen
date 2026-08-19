@@ -268,6 +268,14 @@ export default {
         name: "Name",
         points: "Points",
     },
+    rewards: {
+        title: "Semester rewards",
+        lillaSittningen: "Lilla sittningen",
+        storaSittningen: "Stora sittningen",
+        battlepass: "Battlepass",
+        unlocked: "Unlocked!",
+        pointsLabel: "{current} / {threshold} points",
+    },
     profile: {
         title: "Profile",
         editProfile: "Edit profile",
@@ -517,6 +525,10 @@ export default {
         limit: "Limit",
         rowsShown: "{count} rows shown",
         confirmDelete: "Delete {name}?",
+        confirmDeleteUser:
+            "Permanently delete this user and reassign their references to the deleted-users system account? This cannot be undone.",
+        userDeleted: "User deleted",
+        deleteFailed: "Failed to delete user",
         table: {
             name: "Name",
             description: "Description",

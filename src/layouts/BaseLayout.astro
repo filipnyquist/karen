@@ -3,6 +3,9 @@
 import NavBar from '../components/NavBar.astro';
 import '../styles/global.css';
 import { sha256ScriptHash } from '../lib/csp';
+import { db } from '../db';
+import { legacyMappings } from '../db/schema';
+import { and, eq, isNotNull } from 'drizzle-orm';
 
 interface Props {
   title?: string;
@@ -13,6 +16,25 @@ const lang = Astro.locals.lang ?? 'sv';
 const t = Astro.locals.t;
 const user = Astro.locals.user;
 const siteTitle = title ? `${title} | ${t('site.title')}` : t('site.title');
+
+// Hide the Migrate nav link once the user has completed at least one
+// legacy-to-real migration. `Astro.locals.user` only carries identity
+// (no migration status), so we ask the DB here. One row is enough —
+// existence is the signal, not the count. Skipped for guests.
+let hasMigrated = false;
+if (user) {
+  const [migrated] = await db
+    .select({ migratedAt: legacyMappings.migratedAt })
+    .from(legacyMappings)
+    .where(
+      and(
+        eq(legacyMappings.realUserId, user.id),
+        isNotNull(legacyMappings.migratedAt),
+      ),
+    )
+    .limit(1);
+  hasMigrated = !!migrated;
+}
 const modalOk = t('modal.ok');
 const modalCancel = t('modal.cancel');
 const modalConfirm = t('modal.confirm');
@@ -116,7 +138,7 @@ Astro.csp?.insertScriptHash(sha256ScriptHash(layoutScript));
     <title>{siteTitle}</title>
   </head>
   <body class="min-h-full bg-gray-50 text-gray-900 dark:bg-gray-950 dark:text-gray-100 flex flex-col">
-    <NavBar user={user} lang={lang} t={t} currentPath={Astro.url.pathname} />
+    <NavBar user={user} lang={lang} t={t} currentPath={Astro.url.pathname} hasMigrated={hasMigrated} />
     <main class="flex-1 w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8">
       <slot />
     </main>

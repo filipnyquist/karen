@@ -8,6 +8,28 @@ import { educationTypes, eventStates, locations, users } from "./schema";
 async function seed() {
     console.log("Seeding database...");
 
+    // Tombstone user — fixed zero-UUID so the row is idempotent via
+    // onConflictDoNothing(). insert() values() returns undefined on the
+    // conflict path, which Bun resolves to a no-op promise. Absorbs
+    // FK reassignments when a real user is hard-deleted (see
+    // src/api/routes/superadminUsers.ts / deleteUser).
+    await db
+        .insert(users)
+        .values({
+            id: "00000000-0000-0000-0000-000000000000",
+            email: "deleted@karen.invalid",
+            passwordHash: null,
+            nickname: "Deleted User",
+            name: null,
+            emailVerified: false,
+            verified: false,
+            role: "user",
+            isLegacy: false,
+            seenMigrationPrompt: true,
+        })
+        .onConflictDoNothing();
+    console.log("  ✓ Tombstone user ensured");
+
     // Education types
     const existingEdTypes = await db.select().from(educationTypes);
     if (existingEdTypes.length === 0) {

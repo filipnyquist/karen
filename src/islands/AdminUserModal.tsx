@@ -79,6 +79,7 @@ export default function AdminUserModal({
     const [pwValue, setPwValue] = useState("");
     const [pwConfirm, setPwConfirm] = useState("");
     const [pwSubmitting, setPwSubmitting] = useState(false);
+    const [deleteSubmitting, setDeleteSubmitting] = useState(false);
 
     async function copyUserId() {
         try {
@@ -202,6 +203,58 @@ export default function AdminUserModal({
             setError(errMsg);
         } finally {
             setPwSubmitting(false);
+        }
+    }
+
+    async function deleteUser() {
+        // window.appConfirm is wired by BaseLayout's modal helper —
+        // see src/layouts/BaseLayout.astro. The modal also blocks
+        // the page until the admin confirms.
+        const confirmMsg =
+            t["admin.confirmDeleteUser"] || "Permanently delete this user?";
+        // The global appConfirm is provided by BaseLayout. Inline
+        // scripts set it on window.
+        const appConfirm = (
+            window as unknown as {
+                appConfirm?: (msg: string, ok: () => void) => void;
+            }
+        ).appConfirm;
+        if (!appConfirm) {
+            // Defensive: if BaseLayout didn't hydrate, fall back to
+            // the native dialog. Should never hit in production.
+            if (!window.confirm(confirmMsg)) return;
+            await runDelete();
+            return;
+        }
+        appConfirm(confirmMsg, () => {
+            void runDelete();
+        });
+    }
+
+    async function runDelete() {
+        clearMsgs();
+        setDeleteSubmitting(true);
+        try {
+            const res = await fetch(`/api/admin/users/${userId}`, {
+                method: "DELETE",
+                credentials: "same-origin",
+            });
+            if (!res.ok) {
+                const d = await res.json();
+                throw new Error(
+                    d.error ||
+                        t["admin.deleteFailed"] ||
+                        "Failed to delete user",
+                );
+            }
+            setSuccess(t["admin.userDeleted"] || "User deleted");
+            onRefresh();
+            onClose();
+        } catch (err) {
+            const errMsg = err instanceof Error ? err.message : String(err);
+            setError(errMsg);
+        } finally {
+            setDeleteSubmitting(false);
         }
     }
 
@@ -653,6 +706,31 @@ export default function AdminUserModal({
                             </div>
                         )}
                     </section>
+
+                    {/* Delete (superadmin only) */}
+                    {currentUserIsSuperadmin && data && (
+                        <section class="space-y-3 pt-3 border-t border-gray-200 dark:border-gray-800">
+                            <div>
+                                <h3 class="text-sm font-semibold text-red-600 dark:text-red-400 uppercase tracking-wider">
+                                    {t["admin.deleteUser"] || "Delete user"}
+                                </h3>
+                                <p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                                    {t["admin.confirmDeleteUser"] ||
+                                        "Permanently delete this user and reassign their references to the deleted-users system account? This cannot be undone."}
+                                </p>
+                            </div>
+                            <button
+                                type="button"
+                                onClick={deleteUser}
+                                disabled={deleteSubmitting}
+                                class="px-3 py-1 rounded-md bg-red-600 text-white text-sm hover:bg-red-700 disabled:opacity-50"
+                            >
+                                {deleteSubmitting
+                                    ? t["common.loading"] || "Loading..."
+                                    : t["common.delete"] || "Delete"}
+                            </button>
+                        </section>
+                    )}
 
                     {/* Educations */}
                     <section class="space-y-3">

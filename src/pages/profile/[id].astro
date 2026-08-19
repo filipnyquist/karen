@@ -3,17 +3,19 @@
 import BaseLayout from '../../layouts/BaseLayout.astro';
 import UserAvatar from '../../components/UserAvatar.astro';
 import ColorChip from '../../components/ColorChip.astro';
+import RewardProgress from '../../components/RewardProgress.astro';
 import { db } from '../../db';
 import {
   users, workerRegistrations, events, locations,
   userEducations, educationTypes, pubTeamMembers, pubTeams,
   legacyMappings
 } from '../../db/schema';
-import { eq, and, desc, sql, lte } from 'drizzle-orm';
+import { eq, and, desc, sql, lte, gte } from 'drizzle-orm';
 import { anonymizeName } from '../../utils/anonymize';
 import { isSuperadmin } from '../../api/middleware/auth';
 import { teamColorStyleContent } from '../../lib/teamColor';
 import { sha256StyleHash } from '../../lib/csp';
+import { getCurrentSemester } from '../../services/scoring';
 
 const t = Astro.locals.t;
 const lang = Astro.locals.lang ?? 'sv';
@@ -105,6 +107,29 @@ const [scoreResult] = await db
 
 const totalPoints = scoreResult?.points ?? 0;
 
+// Own-profile-only: this-semester points feed the three reward
+// thresholds in src/components/RewardProgress.astro. Skipped for
+// non-owners to avoid an extra DB round-trip on every profile
+// render.
+const isOwnProfile = currentUser && currentUser.id === profileId;
+let currentSemesterPoints = 0;
+if (isOwnProfile) {
+  const semester = getCurrentSemester();
+  const [semesterScore] = await db
+    .select({ points: sql<number>`count(*)::int` })
+    .from(workerRegistrations)
+    .innerJoin(events, and(
+      eq(workerRegistrations.eventId, events.id),
+      eq(events.givesPoints, true),
+      eq(events.locked, true),
+      lte(events.endDate, new Date()),
+      gte(events.startDate, semester.start),
+    ))
+    .where(eq(workerRegistrations.userId, profileId))
+    .limit(1);
+  currentSemesterPoints = semesterScore?.points ?? 0;
+}
+
 // Fetch educations with per-locale fields. The render cascades
 // (lang-specific → fallback `name`/`description`) so a row that
 // hasn't been localized still shows the legacy English-ish values.
@@ -155,7 +180,6 @@ const teams = await db
   .innerJoin(pubTeams, eq(pubTeamMembers.teamId, pubTeams.id))
   .where(eq(pubTeamMembers.userId, profileId));
 
-const isOwnProfile = currentUser && currentUser.id === profileId;
 const isMrMime = profileUser.nickname?.trim() === 'Mr.Mime';
 
 // `<style is:inline>` block for team color classes used on this page.
@@ -353,6 +377,10 @@ if (teamColorsCss) Astro.csp?.insertStyleHash(sha256StyleHash(teamColorsCss));
               ))}
             </ul>
           </div>
+        )}
+
+        {isOwnProfile && (
+          <RewardProgress currentPoints={currentSemesterPoints} t={t} />
         )}
       </div>
     </div>

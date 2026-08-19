@@ -8,7 +8,7 @@
 import { randomBytes } from "node:crypto";
 import { chmodSync, existsSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
-import { eq, sql } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { generateJoinCode } from "../utils/joinCode";
 import { db } from "./index";
 import {
@@ -76,6 +76,29 @@ function writeSecrets(secrets: SecretsFile): void {
 
 async function seed() {
     console.log("Seeding test data...");
+
+    // Tombstone user — fixed zero-UUID so the row is idempotent via
+    // onConflictDoNothing(). Absorbs FK reassignments when a real
+    // user is hard-deleted (see src/api/routes/superadminUsers.ts /
+    // deleteUser). Seeded first so even if a later insert fails the
+    // tombstone is already present and deleteUser's Layer 4 guard
+    // won't false-positive.
+    await db
+        .insert(users)
+        .values({
+            id: "00000000-0000-0000-0000-000000000000",
+            email: "deleted@karen.invalid",
+            passwordHash: null,
+            nickname: "Deleted User",
+            name: null,
+            emailVerified: false,
+            verified: false,
+            role: "user",
+            isLegacy: false,
+            seenMigrationPrompt: true,
+        })
+        .onConflictDoNothing();
+    console.log("  ✓ Tombstone user ensured");
 
     const secrets = readSecrets();
     const passwords = secrets.users;
@@ -221,7 +244,7 @@ async function seed() {
         verified: false,
         emailVerified: false,
     });
-    const _migrant = await getOrCreateUser("migrant@karen.se", {
+    const migrantUser = await getOrCreateUser("migrant@karen.se", {
         name: "Migrant User",
         nickname: "Migranten",
         role: "user",
@@ -276,6 +299,76 @@ async function seed() {
             placeholderUserId: legacyUser.id,
             migrationToken: secrets.migrationToken,
             migrationTokenExpiry: tokenExpiry,
+        });
+    }
+
+    // A *completed* mapping tied to migrantUser — used by the
+    // hide-migrate-button e2e spec to verify the Migrate nav link
+    // vanishes once the real user has at least one finished
+    // migration. Kept separate from the unclaimed row above so the
+    // admin-manual-migration spec still has an unclaimed row to
+    // claim. A unique oldUserId is required (column has .unique()).
+    const [existingCompletedMapping] = await db
+        .select()
+        .from(legacyMappings)
+        .where(eq(legacyMappings.oldUserId, 98));
+    if (!existingCompletedMapping) {
+        const migratedAt = new Date();
+        await db.insert(legacyMappings).values({
+            oldUserId: 98,
+            oldEmail: "legacy-claimed@example.com",
+            oldNickname: "LegacyClaimed",
+            placeholderUserId: legacyUser.id,
+            realUserId: migrantUser.id,
+            migratedAt,
+        });
+    }
+
+    // A *second* unclaimed placeholder, used by the multi-merge e2e
+    // spec to verify executing two placeholder→karen merges into the
+    // same real user. Both placeholders are added to Bryggeriet so
+    // that the second merge's pub_team_members UPDATE would PK-violate
+    // without the DELETE-then-UPDATE fix in executeMerge.
+    const [existingPlaceholder2] = await db
+        .select()
+        .from(users)
+        .where(eq(users.email, "legacy-97@imported.pykaren"));
+    let legacyUser2: typeof users.$inferSelect;
+    if (existingPlaceholder2) {
+        legacyUser2 = existingPlaceholder2;
+    } else {
+        const [created2] = await db
+            .insert(users)
+            .values({
+                email: "legacy-97@imported.pykaren",
+                passwordHash: null,
+                name: "Legacy User Two",
+                nickname: "LegacyUserTwo",
+                role: "user",
+                isLegacy: true,
+                verified: false,
+                emailVerified: false,
+            })
+            .returning();
+        legacyUser2 = created2;
+    }
+
+    const [existingMapping2] = await db
+        .select()
+        .from(legacyMappings)
+        .where(eq(legacyMappings.oldUserId, 97));
+    if (!existingMapping2) {
+        await db.insert(legacyMappings).values({
+            oldUserId: 97,
+            oldEmail: "legacy-second@example.com",
+            oldNickname: "LegacyUserTwo",
+            placeholderUserId: legacyUser2.id,
+            migrationToken: randomBytes(32).toString("hex"),
+            migrationTokenExpiry: (() => {
+                const e = new Date();
+                e.setHours(e.getHours() + 24);
+                return e;
+            })(),
         });
     }
     writeSecrets(secrets);
@@ -448,9 +541,38 @@ async function seed() {
         "The brewing squad",
         "#10B981",
         alice.id,
-        [alice.id, bob.id, diana.id, erik.id, legacyUser.id],
+        [alice.id, bob.id, diana.id, erik.id, legacyUser.id, legacyUser2.id],
         [alice.id],
     );
+    // The above only adds the placeholder on the *first* seed run;
+    // on subsequent runs the team already exists and createTeam is a
+    // no-op. Make sure both legacy placeholders are members of
+    // Bryggeriet either way, so the multi-merge spec can rely on the
+    // shared-team conflict scenario regardless of seed state.
+    const [bryggeriet] = await db
+        .select()
+        .from(pubTeams)
+        .where(eq(pubTeams.name, "Bryggeriet"));
+    if (bryggeriet) {
+        for (const placeholderId of [legacyUser.id, legacyUser2.id]) {
+            const [alreadyIn] = await db
+                .select()
+                .from(pubTeamMembers)
+                .where(
+                    and(
+                        eq(pubTeamMembers.teamId, bryggeriet.id),
+                        eq(pubTeamMembers.userId, placeholderId),
+                    ),
+                );
+            if (!alreadyIn) {
+                await db.insert(pubTeamMembers).values({
+                    teamId: bryggeriet.id,
+                    userId: placeholderId,
+                    isAdmin: false,
+                });
+            }
+        }
+    }
     await createTeam(
         "Barcrew",
         "Bar service team",

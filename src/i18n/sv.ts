@@ -270,6 +270,14 @@ export default {
         name: "Namn",
         points: "Poäng",
     },
+    rewards: {
+        title: "Terminsbelöningar",
+        lillaSittningen: "Lilla sittningen",
+        storaSittningen: "Stora sittningen",
+        battlepass: "Battlepass",
+        unlocked: "Upplåst!",
+        pointsLabel: "{current} / {threshold} poäng",
+    },
     profile: {
         title: "Profil",
         editProfile: "Redigera profil",
@@ -521,6 +529,10 @@ export default {
         limit: "Antal",
         rowsShown: "{count} rader visas",
         confirmDelete: "Ta bort {name}?",
+        confirmDeleteUser:
+            "Vill du permanent ta bort den här användaren och peka om deras referenser till systemkontot för borttagna användare? Det här går inte att ångra.",
+        userDeleted: "Användare borttagen",
+        deleteFailed: "Kunde inte ta bort användaren",
         table: {
             name: "Namn",
             description: "Beskrivning",
