@@ -1,0 +1,158 @@
+---
+// src/components/RewardProgress.astro
+//
+// Three-reward threshold progress bar — own profile only. The fill
+// is rendered via Tailwind arbitrary-width classes (`w-[X%]`) so the
+// markup stays CSP-safe (no inline `style=""`).
+//
+// Tailwind v4's JIT scans source files for literal class strings, so
+// dynamic widths (`w-[${pct}%]` constructed at runtime) would not be
+// emitted. We pre-list every width class we might use as a static
+// literal in FILL_CLASSES, then pick one at render time. The set is
+// coarse (5% steps) because a threshold of 7 points means the user
+// sees at most 21 distinct fill levels in a lifetime.
+
+interface Props {
+  currentPoints: number;
+  t: (key: string) => string;
+}
+
+const { currentPoints, t } = Astro.props;
+
+interface Reward {
+  id: string;
+  labelKey: string;
+  threshold: number;
+}
+
+const REWARDS: Reward[] = [
+  { id: "lillaSittningen", labelKey: "rewards.lillaSittningen", threshold: 3 },
+  { id: "storaSittningen", labelKey: "rewards.storaSittningen", threshold: 5 },
+  { id: "battlepass", labelKey: "rewards.battlepass", threshold: 7 },
+];
+
+// Static literal list — required for Tailwind v4's JIT scanner to
+// emit the corresponding utility classes. Adding a new step here is
+// the only way to introduce a new fill resolution.
+const FILL_CLASSES = [
+  "w-[0%]",
+  "w-[5%]",
+  "w-[10%]",
+  "w-[15%]",
+  "w-[20%]",
+  "w-[25%]",
+  "w-[30%]",
+  "w-[35%]",
+  "w-[40%]",
+  "w-[45%]",
+  "w-[50%]",
+  "w-[55%]",
+  "w-[60%]",
+  "w-[65%]",
+  "w-[70%]",
+  "w-[75%]",
+  "w-[80%]",
+  "w-[85%]",
+  "w-[90%]",
+  "w-[95%]",
+  "w-[100%]",
+] as const;
+
+// Snaps a percentage to the nearest 5% step (round-half-up so .5%
+// at 22.5 → 25 rather than 20). Used by fillClassFor().
+function snapTo5(pct: number): number {
+  return Math.min(100, Math.max(0, Math.round(pct / 5) * 5));
+}
+
+function fillClassFor(current: number, threshold: number): string {
+  const pct = Math.min(100, Math.round((current / threshold) * 100));
+  const snapped = snapTo5(pct);
+  return FILL_CLASSES[snapped / 5];
+}
+
+// Resolves {current}/{threshold} placeholders. The i18n strings are
+// authored as `"{current} / {threshold} points"` (en) /
+// `"{current} / {threshold} poäng"` (sv); the substring is in the
+// same position, so a literal .replaceAll on both placeholders works
+// for any locale.
+function pointsLabel(current: number, threshold: number): string {
+  const template = t("rewards.pointsLabel");
+  return template
+    .replaceAll("{current}", String(current))
+    .replaceAll("{threshold}", String(threshold));
+}
+---
+
+<section
+  class="bg-white dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-800 p-6"
+  aria-labelledby="rewards-heading"
+>
+  <h2
+    id="rewards-heading"
+    class="text-lg font-semibold text-gray-900 dark:text-white mb-4"
+  >
+    {t("rewards.title")}
+  </h2>
+  <ul class="space-y-4">
+    {REWARDS.map((reward) => {
+      const unlocked = currentPoints >= reward.threshold;
+      const fillClass = fillClassFor(currentPoints, reward.threshold);
+      return (
+        <li>
+          <div class="flex items-center justify-between mb-1">
+            <span class="text-sm font-medium text-gray-800 dark:text-gray-200">
+              {t(reward.labelKey)}
+            </span>
+            {unlocked ? (
+              <span class="inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300">
+                <svg
+                  class="w-3 h-3"
+                  viewBox="0 0 20 20"
+                  fill="currentColor"
+                  aria-hidden="true"
+                >
+                  <path
+                    fill-rule="evenodd"
+                    d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"
+                    clip-rule="evenodd"
+                  />
+                </svg>
+                {t("rewards.unlocked")}
+              </span>
+            ) : (
+              <span class="text-xs text-gray-500 dark:text-gray-400">
+                {pointsLabel(currentPoints, reward.threshold)}
+              </span>
+            )}
+          </div>
+          <div
+            class="h-2 w-full bg-gray-200 dark:bg-gray-800 rounded-full overflow-hidden"
+            role="progressbar"
+            aria-valuenow={Math.min(100, Math.round((currentPoints / reward.threshold) * 100))}
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-label={`${t(reward.labelKey)} ${Math.min(100, Math.round((currentPoints / reward.threshold) * 100))}%`}
+          >
+            <div
+              class:list={[
+                "h-full rounded-full transition-all",
+                unlocked
+                  ? "bg-green-500 dark:bg-green-400"
+                  : "bg-blue-500 dark:bg-blue-400",
+                fillClass,
+              ]}
+            />
+          </div>
+          {/* Show the points label below the bar even when unlocked,
+             so the user can see how far they overshot. Hidden when
+             the badge is shown above (replaces the label). */}
+          {unlocked && (
+            <p class="mt-1 text-xs text-green-700 dark:text-green-300">
+              {pointsLabel(currentPoints, reward.threshold)}
+            </p>
+          )}
+        </li>
+      );
+    })}
+  </ul>
+</section>

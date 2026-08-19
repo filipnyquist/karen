@@ -268,6 +268,14 @@ export default {
         name: "Name",
         points: "Points",
     },
+    rewards: {
+        title: "Semester rewards",
+        lillaSittningen: "Lilla sittningen",
+        storaSittningen: "Stora sittningen",
+        battlepass: "Battlepass",
+        unlocked: "Unlocked!",
+        pointsLabel: "{current} / {threshold} points",
+    },
     profile: {
         title: "Profile",
         editProfile: "Edit profile",

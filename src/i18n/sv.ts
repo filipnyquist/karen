@@ -270,6 +270,14 @@ export default {
         name: "Namn",
         points: "Poäng",
     },
+    rewards: {
+        title: "Terminsbelöningar",
+        lillaSittningen: "Lilla sittningen",
+        storaSittningen: "Stora sittningen",
+        battlepass: "Battlepass",
+        unlocked: "Upplåst!",
+        pointsLabel: "{current} / {threshold} poäng",
+    },
     profile: {
         title: "Profil",
         editProfile: "Redigera profil",
