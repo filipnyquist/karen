@@ -6,6 +6,7 @@ import { db } from '../../db';
 import { eventStates, events, locations, workerRegistrations, guestRegistrations } from '../../db/schema';
 import { eq, desc, asc, sql, gt, lt, and, or, gte, lte, like } from 'drizzle-orm';
 import { isAdmin } from '../../api/middleware/auth';
+import { guestCountLabel } from '../../lib/eventDisplay';
 
 const t = Astro.locals.t;
 const lang = Astro.locals.lang ?? 'sv';
@@ -441,7 +442,7 @@ const hasActiveFilters = search || locationFilter || stateFilter || dateFrom || 
                       </span>
                     </td>
                     <td class="px-4 py-3 text-gray-600 dark:text-gray-400">
-                      {event.currentGuests ?? 0}{event.maxGuests !== null ? `/${event.maxGuests}` : ''}
+                      {guestCountLabel(event.currentGuests ?? 0, event.maxGuests, t)}
                     </td>
                   </tr>
                 );

@@ -13,6 +13,7 @@ import ReportEditor from '../../islands/ReportEditor';
 import { anonymizeName } from '../../utils/anonymize';
 import { flattenTranslations } from '../../i18n/index';
 import { sha256ScriptHash } from '../../lib/csp';
+import { guestCountLabel } from '../../lib/eventDisplay';
 import { db } from '../../db';
 import {
   events, locations, eventStates, workerRegistrations, guestRegistrations,
@@ -250,7 +251,8 @@ const eventScript = `(function(){
     lockSuccessTickets: ${JSON.stringify(t('event.lockSuccessTickets'))},
     unlockSuccess: ${JSON.stringify(t('event.unlockSuccess'))},
     networkError: ${JSON.stringify(t('common.networkError'))},
-    failed: ${JSON.stringify(t('common.failed'))}
+    failed: ${JSON.stringify(t('common.failed'))},
+    noGuestList: ${JSON.stringify(t('event.noGuestList'))}
   };
 
   // Register as worker
@@ -450,9 +452,16 @@ const eventScript = `(function(){
     document.querySelectorAll(
       '[data-event-count="guests"][data-event-id="' + eventId + '"]'
     ).forEach((el) => {
-      el.textContent = detail.maxGuests != null
-        ? detail.guests + '/' + detail.maxGuests
-        : String(detail.guests);
+      // Mirror src/lib/eventDisplay.ts:guestCountLabel server-side semantics.
+      // maxGuests === 0 means "no guest list" — show just the localized
+      // label, no count. A null maxGuests hides the cap.
+      if (detail.maxGuests === 0) {
+        el.textContent = t.noGuestList;
+      } else if (detail.maxGuests != null) {
+        el.textContent = detail.guests + '/' + detail.maxGuests;
+      } else {
+        el.textContent = String(detail.guests);
+      }
     });
   });
 
@@ -669,7 +678,7 @@ Astro.csp?.insertScriptHash(sha256ScriptHash(eventScript));
             <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
             </svg>
-            {t('event.guests')} (<span data-event-count="guests" data-event-id={eventId}>{guests.length}{event.maxGuests ? `/${event.maxGuests}` : ''}</span>)
+            {t('event.guests')} (<span data-event-count="guests" data-event-id={eventId}>{guestCountLabel(guests.length, event.maxGuests, t)}</span>)
           </button>
         )}
         {/* Anonymous viewers see the count but not the button. */}
@@ -682,7 +691,7 @@ Astro.csp?.insertScriptHash(sha256ScriptHash(eventScript));
             <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656-.126-1.283-.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
             </svg>
-            {t('event.guests')} ({guests.length}{event.maxGuests ? `/${event.maxGuests}` : ''})
+            {t('event.guests')} ({guestCountLabel(guests.length, event.maxGuests, t)})
           </span>
         )}
         {isCurrentUserAdminOrResponsible && (
