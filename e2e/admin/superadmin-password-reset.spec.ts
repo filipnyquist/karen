@@ -58,10 +58,14 @@ test.describe("Superadmin password reset", () => {
     test.beforeEach(async ({ page }) => {
         await login(page, "superadmin");
         const usersRes = await browserFetch(page, "GET", "/api/admin/users");
-        const users = usersRes.body as Array<{
-            id: string;
-            email: string;
-        }>;
+        const users = (
+            usersRes.body as {
+                users: Array<{
+                    id: string;
+                    email: string;
+                }>;
+            }
+        ).users;
         const bob = users.find((u) => u.email === TEST_USER_EMAILS.bob);
         const seedPassword = "BobSeedPass1";
         await browserFetch(
@@ -80,10 +84,14 @@ test.describe("Superadmin password reset", () => {
         // Look up bob's user id.
         const usersRes = await browserFetch(page, "GET", "/api/admin/users");
         expect(usersRes.ok).toBeTruthy();
-        const users = usersRes.body as Array<{
-            id: string;
-            email: string;
-        }>;
+        const users = (
+            usersRes.body as {
+                users: Array<{
+                    id: string;
+                    email: string;
+                }>;
+            }
+        ).users;
         const bob = users.find((u) => u.email === TEST_USER_EMAILS.bob);
         expect(bob).toBeTruthy();
         const bobId = bob?.id as string;
@@ -125,7 +133,9 @@ test.describe("Superadmin password reset", () => {
         await login(page, "superadmin");
 
         const usersRes = await browserFetch(page, "GET", "/api/admin/users");
-        const users = usersRes.body as Array<{ id: string; email: string }>;
+        const users = (
+            usersRes.body as { users: Array<{ id: string; email: string }> }
+        ).users;
         const bob = users.find((u) => u.email === TEST_USER_EMAILS.bob);
         expect(bob).toBeTruthy();
         const bobId = bob?.id as string;
@@ -165,7 +175,9 @@ test.describe("Superadmin password reset", () => {
         await login(page, "admin");
 
         const usersRes = await browserFetch(page, "GET", "/api/admin/users");
-        const users = usersRes.body as Array<{ id: string; email: string }>;
+        const users = (
+            usersRes.body as { users: Array<{ id: string; email: string }> }
+        ).users;
         const bob = users.find((u) => u.email === TEST_USER_EMAILS.bob);
         expect(bob).toBeTruthy();
         const bobId = bob?.id as string;
@@ -258,10 +270,14 @@ test.describe("Superadmin password reset", () => {
 
         const usersRes = await browserFetch(page, "GET", "/api/admin/users");
         expect(usersRes.ok).toBeTruthy();
-        const users = usersRes.body as Array<{
-            id: string;
-            email: string;
-        }>;
+        const users = (
+            usersRes.body as {
+                users: Array<{
+                    id: string;
+                    email: string;
+                }>;
+            }
+        ).users;
         const bob = users.find((u) => u.email === TEST_USER_EMAILS.bob);
         expect(bob).toBeTruthy();
         const bobId = bob?.id as string;

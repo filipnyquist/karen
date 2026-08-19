@@ -127,11 +127,15 @@ test.describe("Admin manual migration", () => {
         // Look up the target user's UUID via /api/admin/users.
         const usersRes = await browserFetch(page, "GET", "/api/admin/users");
         expect(usersRes.ok).toBeTruthy();
-        const users = usersRes.body as Array<{
-            id: string;
-            email: string;
-            isLegacy: boolean | null;
-        }>;
+        const users = (
+            usersRes.body as {
+                users: Array<{
+                    id: string;
+                    email: string;
+                    isLegacy: boolean | null;
+                }>;
+            }
+        ).users;
         const target = users.find((u) => u.email === TEST_USER_EMAILS.migrant);
         expect(target).toBeTruthy();
         // A real user (not a legacy placeholder) must be the target.
@@ -164,11 +168,15 @@ test.describe("Admin manual migration", () => {
 
         const usersRes = await browserFetch(page, "GET", "/api/admin/users");
         expect(usersRes.ok).toBeTruthy();
-        const users = usersRes.body as Array<{
-            id: string;
-            email: string;
-            isLegacy: boolean | null;
-        }>;
+        const users = (
+            usersRes.body as {
+                users: Array<{
+                    id: string;
+                    email: string;
+                    isLegacy: boolean | null;
+                }>;
+            }
+        ).users;
         const legacy = users.find((u) => u.isLegacy === true);
         if (!legacy) {
             test.skip(true, "No legacy placeholder user seeded");

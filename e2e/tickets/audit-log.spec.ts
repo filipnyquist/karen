@@ -93,10 +93,14 @@ test.describe("Ticket audit log", () => {
         //    by the cross-event-redeem test running in parallel, so we
         //    use a different user to keep this test isolated.)
         const usersRes = await browserGet(page, "/api/admin/users");
-        const users = usersRes.body as Array<{
-            id: string;
-            email: string;
-        }>;
+        const users = (
+            usersRes.body as {
+                users: Array<{
+                    id: string;
+                    email: string;
+                }>;
+            }
+        ).users;
         const bob = users.find((u) => u.email === "bob@karen.se");
         expect(bob).toBeTruthy();
 
@@ -106,10 +110,14 @@ test.describe("Ticket audit log", () => {
         await page.context().clearCookies();
         await login(page, "superadmin");
         const usersRes2 = await browserGet(page, "/api/admin/users");
-        const allUsers = usersRes2.body as Array<{
-            id: string;
-            email: string;
-        }>;
+        const allUsers = (
+            usersRes2.body as {
+                users: Array<{
+                    id: string;
+                    email: string;
+                }>;
+            }
+        ).users;
         const bobForReset = allUsers.find((u) => u.email === "bob@karen.se");
         const { getPasswordFor } = await import("../helpers/auth");
         const seedPassword = getPasswordFor("bob@karen.se");

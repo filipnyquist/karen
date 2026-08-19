@@ -70,7 +70,7 @@ async function fetchUsers(
 ): Promise<AdminUser[]> {
     const res = await browserFetch(page, "GET", "/api/admin/users?limit=200");
     expect(res.ok).toBeTruthy();
-    return res.body as AdminUser[];
+    return (res.body as { users: AdminUser[] }).users;
 }
 
 test.describe.configure({ mode: "serial" });

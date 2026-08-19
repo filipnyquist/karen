@@ -1,5 +1,5 @@
 // src/islands/AdminDashboard.tsx
-import { useCallback, useEffect, useState } from "preact/hooks";
+import { useCallback, useEffect, useRef, useState } from "preact/hooks";
 import AdminUserModal from "./AdminUserModal";
 import InviteUserModal from "./InviteUserModal";
 
@@ -14,69 +14,152 @@ interface User {
     createdAt: Date | string;
 }
 
-interface EduType {
-    id: number;
-    name: string;
-}
+type SortBy =
+    | "email"
+    | "name"
+    | "nickname"
+    | "role"
+    | "verified"
+    | "emailVerified"
+    | "createdAt";
+type SortDir = "asc" | "desc";
 
 interface AdminDashboardProps {
     initialUsers: User[];
-    educationTypes: EduType[];
+    initialTotal: number;
     currentUserIsSuperadmin: boolean;
     t: Record<string, string>;
 }
 
+const PAGE_SIZE = 50;
+const SEARCH_DEBOUNCE_MS = 300;
+
 export default function AdminDashboard({
     initialUsers,
+    initialTotal,
     currentUserIsSuperadmin,
     t,
 }: AdminDashboardProps) {
     const [users, setUsers] = useState<User[]>(initialUsers);
-    const [search, setSearch] = useState("");
-    const [searching, setSearching] = useState(false);
+    const [total, setTotal] = useState(initialTotal);
+    const [query, setQuery] = useState("");
+    const [debouncedQuery, setDebouncedQuery] = useState("");
+    const [sortBy, setSortBy] = useState<SortBy>("createdAt");
+    const [sortDir, setSortDir] = useState<SortDir>("desc");
+    const [page, setPage] = useState(0);
+    const [loading, setLoading] = useState(false);
     const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
     const [showInviteModal, setShowInviteModal] = useState(false);
-    const [searchTimeout, setSearchTimeout] = useState<ReturnType<
-        typeof setTimeout
-    > | null>(null);
-    // `data-hydrated="true"` lets e2e tests wait for Preact to wire up the
-    // row onClick handlers before driving the table. Without this marker
-    // the click on a user row fires before hydration and is a no-op, so
-    // the modal never opens and the test times out. See
-    // memory/preact-hydration-marker.
     const [hydrated, setHydrated] = useState(false);
+
+    const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
     useEffect(() => {
         setHydrated(true);
     }, []);
 
-    const refreshUsers = useCallback(async () => {
-        try {
-            const res = await fetch("/api/admin/users?limit=100", {
-                credentials: "same-origin",
+    // Debounce the search input — the user types here, `debouncedQuery`
+    // is what actually drives the fetch.
+    useEffect(() => {
+        if (debounceTimer.current) clearTimeout(debounceTimer.current);
+        debounceTimer.current = setTimeout(() => {
+            setDebouncedQuery(query);
+            setPage(0);
+        }, SEARCH_DEBOUNCE_MS);
+        return () => {
+            if (debounceTimer.current) clearTimeout(debounceTimer.current);
+        };
+    }, [query]);
+
+    // Single fetch driven by the debounced search + sort + page.
+    useEffect(() => {
+        let cancelled = false;
+        setLoading(true);
+        const params = new URLSearchParams({
+            sortBy,
+            sortDir,
+            limit: String(PAGE_SIZE),
+            offset: String(page * PAGE_SIZE),
+        });
+        if (debouncedQuery.trim()) params.set("q", debouncedQuery.trim());
+
+        fetch(`/api/admin/users?${params.toString()}`, {
+            credentials: "same-origin",
+        })
+            .then((r) =>
+                r.ok ? r.json() : Promise.reject(new Error(r.statusText)),
+            )
+            .then((data: { users: User[]; total: number }) => {
+                if (cancelled) return;
+                setUsers(data.users);
+                setTotal(data.total);
+            })
+            .catch(() => {
+                /* leave prior state intact */
+            })
+            .finally(() => {
+                if (!cancelled) setLoading(false);
             });
-            if (res.ok) setUsers(await res.json());
-        } catch {}
+
+        return () => {
+            cancelled = true;
+        };
+    }, [debouncedQuery, sortBy, sortDir, page]);
+
+    // Re-fetch the current view (used after the user modal mutates a row).
+    const refreshUsers = useCallback(() => {
+        setPage((p) => p);
+        // Force the effect to re-run by toggling a stable trigger: bump
+        // debouncedQuery to its current value via the setter pattern.
+        setDebouncedQuery((q) => q);
     }, []);
 
-    useEffect(() => {
-        if (!search.trim()) {
-            setUsers(initialUsers);
-            return;
+    const toggleSort = (column: SortBy) => {
+        if (sortBy === column) {
+            setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+        } else {
+            setSortBy(column);
+            setSortDir("asc");
         }
-        if (searchTimeout) clearTimeout(searchTimeout);
-        const tm = setTimeout(async () => {
-            setSearching(true);
-            try {
-                const res = await fetch(
-                    `/api/admin/users/search/${encodeURIComponent(search)}`,
-                    { credentials: "same-origin" },
-                );
-                if (res.ok) setUsers(await res.json());
-            } catch {}
-            setSearching(false);
-        }, 300);
-        setSearchTimeout(tm);
-    }, [search, searchTimeout, initialUsers]);
+        setPage(0);
+    };
+
+    const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+    const canPrev = page > 0;
+    const canNext = page + 1 < totalPages;
+
+    const columnHeader = (key: SortBy, label: string) => {
+        const isActive = sortBy === key;
+        const arrow = isActive ? (sortDir === "asc" ? "▲" : "▼") : "";
+        const ariaSort = isActive
+            ? sortDir === "asc"
+                ? "ascending"
+                : "descending"
+            : "none";
+        const ariaLabel = isActive
+            ? sortDir === "asc"
+                ? t["admin.sortAsc"] || "Sort ascending"
+                : t["admin.sortDesc"] || "Sort descending"
+            : t["admin.sortAsc"] || "Sort ascending";
+        return (
+            <th
+                class="px-4 py-3 text-left font-medium text-gray-500 dark:text-gray-400"
+                aria-sort={ariaSort}
+            >
+                <button
+                    type="button"
+                    onClick={() => toggleSort(key)}
+                    aria-label={`${label} — ${ariaLabel}`}
+                    class="inline-flex items-center gap-1 hover:text-blue-600 dark:hover:text-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-500 rounded"
+                >
+                    {label}
+                    <span class="text-xs w-3 inline-block" aria-hidden="true">
+                        {arrow}
+                    </span>
+                </button>
+            </th>
+        );
+    };
 
     return (
         <div class="space-y-4" data-hydrated={hydrated ? "true" : "false"}>
@@ -88,6 +171,7 @@ export default function AdminDashboard({
                         fill="none"
                         viewBox="0 0 24 24"
                         stroke="currentColor"
+                        aria-hidden="true"
                     >
                         <path
                             stroke-linecap="round"
@@ -98,17 +182,21 @@ export default function AdminDashboard({
                     </svg>
                     <input
                         type="text"
-                        value={search}
+                        value={query}
                         onInput={(e) =>
-                            setSearch((e.target as HTMLInputElement).value)
+                            setQuery((e.target as HTMLInputElement).value)
                         }
                         placeholder={
                             t["admin.searchUsers"] || "Search users..."
                         }
                         class="w-full pl-10 pr-4 py-2 rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white placeholder-gray-400 text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                     />
-                    {searching && (
-                        <div class="absolute right-3 top-1/2 -translate-y-1/2">
+                    {loading && (
+                        <div
+                            class="absolute right-3 top-1/2 -translate-y-1/2"
+                            role="status"
+                            aria-label={t["admin.loading"] || "Loading..."}
+                        >
                             <div class="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600" />
                         </div>
                     )}
@@ -126,31 +214,35 @@ export default function AdminDashboard({
 
             {/* Table */}
             <div class="bg-white dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-800 overflow-hidden">
-                <div class="overflow-x-auto">
+                <div class="overflow-x-auto relative">
                     <table class="w-full text-sm">
                         <thead class="bg-gray-50 dark:bg-gray-800">
                             <tr>
-                                <th class="px-4 py-3 text-left font-medium text-gray-500 dark:text-gray-400">
-                                    {t["admin.userTable.email"] || "Email"}
-                                </th>
-                                <th class="px-4 py-3 text-left font-medium text-gray-500 dark:text-gray-400">
-                                    {t["admin.userTable.name"] || "Name"}
-                                </th>
-                                <th class="px-4 py-3 text-left font-medium text-gray-500 dark:text-gray-400">
-                                    {t["admin.userTable.nickname"] ||
-                                        "Nickname"}
-                                </th>
-                                <th class="px-4 py-3 text-left font-medium text-gray-500 dark:text-gray-400">
-                                    {t["admin.userTable.role"] || "Role"}
-                                </th>
-                                <th class="px-4 py-3 text-left font-medium text-gray-500 dark:text-gray-400">
-                                    {t["admin.userTable.verified"] ||
-                                        "Verified"}
-                                </th>
-                                <th class="px-4 py-3 text-left font-medium text-gray-500 dark:text-gray-400">
-                                    {t["admin.userTable.emailVerified"] ||
-                                        "Email"}
-                                </th>
+                                {columnHeader(
+                                    "email",
+                                    t["admin.userTable.email"] || "Email",
+                                )}
+                                {columnHeader(
+                                    "name",
+                                    t["admin.userTable.name"] || "Name",
+                                )}
+                                {columnHeader(
+                                    "nickname",
+                                    t["admin.userTable.nickname"] || "Nickname",
+                                )}
+                                {columnHeader(
+                                    "role",
+                                    t["admin.userTable.role"] || "Role",
+                                )}
+                                {columnHeader(
+                                    "verified",
+                                    t["admin.userTable.verified"] || "Verified",
+                                )}
+                                {columnHeader(
+                                    "emailVerified",
+                                    t["admin.userTable.emailVerified"] ||
+                                        "Email",
+                                )}
                             </tr>
                         </thead>
                         <tbody class="divide-y divide-gray-200 dark:divide-gray-700">
@@ -160,8 +252,10 @@ export default function AdminDashboard({
                                         colSpan={6}
                                         class="px-4 py-8 text-center text-gray-400"
                                     >
-                                        {t["admin.noResults"] ||
-                                            "No users found"}
+                                        {loading
+                                            ? t["admin.loading"] || "Loading..."
+                                            : t["admin.noResults"] ||
+                                              "No users found"}
                                     </td>
                                 </tr>
                             ) : (
@@ -223,13 +317,42 @@ export default function AdminDashboard({
                 </div>
             </div>
 
-            <p class="text-xs text-gray-400">
-                {(t["admin.usersShown"] || "{count} users shown").replace(
-                    "{count}",
-                    String(users.length),
-                )}{" "}
-                — {t["admin.clickRowToManage"] || "click a row to manage"}
-            </p>
+            {/* Footer: total count + pagination */}
+            <div class="flex items-center justify-between text-xs text-gray-400">
+                <span>
+                    {(t["admin.usersShown"] || "{count} users").replace(
+                        "{count}",
+                        String(total),
+                    )}
+                    {" — "}
+                    {t["admin.clickRowToManage"] || "click a row to manage"}
+                </span>
+                <nav
+                    class="flex items-center gap-2"
+                    aria-label={t["admin.page"] || "Page"}
+                >
+                    <button
+                        type="button"
+                        onClick={() => setPage((p) => Math.max(0, p - 1))}
+                        disabled={!canPrev}
+                        class="px-2.5 py-1 rounded border border-gray-300 dark:border-gray-700 text-gray-700 dark:text-gray-300 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-gray-50 dark:hover:bg-gray-800"
+                    >
+                        ← {t["admin.prevPage"] || "Previous"}
+                    </button>
+                    <span class="text-gray-600 dark:text-gray-400">
+                        {t["admin.page"] || "Page"} {page + 1}{" "}
+                        {t["admin.of"] || "of"} {totalPages}
+                    </span>
+                    <button
+                        type="button"
+                        onClick={() => setPage((p) => p + 1)}
+                        disabled={!canNext}
+                        class="px-2.5 py-1 rounded border border-gray-300 dark:border-gray-700 text-gray-700 dark:text-gray-300 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-gray-50 dark:hover:bg-gray-800"
+                    >
+                        {t["admin.nextPage"] || "Next"} →
+                    </button>
+                </nav>
+            </div>
 
             {/* Modals */}
             {selectedUserId && (
