@@ -1,18 +1,34 @@
 // e2e/authenticated/admin-multi-merge.spec.ts
 //
-// Verifies the multi-merge fix in executeMerge: two legacy
-// placeholders that *both* already sit on the same pub team
-// (Bryggeriet) can be merged into the same real user without a PK
-// violation on (team_id, user_id). Pre-fix this would 500 the second
-// merge with `duplicate key value violates unique constraint
-// "pub_team_members_pkey"`. Post-fix the DELETE-then-UPDATE
-// sequence drops the conflicting placeholder row first.
+// Verifies the multi-merge fixes in executeMerge: two legacy
+// placeholders can be merged into the same real user without
+// tripping any of the four composite-key / partial-unique
+// constraints that reassigning user_id collides with:
 //
-// Test seed adds two placeholders: legacyUser and legacyUser2, both
-// members of Bryggeriet, with legacy_mappings oldUserId=99 and
-// oldUserId=97 respectively. Mapping 98 is pre-completed (used by
-// hide-migrate-button.spec.ts), so we only have two unclaimed
-// mappings to drain.
+//   1. pub_team_members   PK        (team_id, user_id)
+//   2. worker_registrations unique   (event_id, user_id)
+//   3. tickets            partial    (user_id, event_id) WHERE is_active
+//   4. user_educations    PK        (user_id, education_type_id)
+//
+// Pre-fix this would 500 the second merge with a 23505 unique-constraint
+// violation on whichever constraint fired first. Post-fix the
+// DELETE-then-UPDATE sequence in executeMerge drops the conflicting
+// placeholder rows first, inside the same tx so concurrent merges of
+// the same real user can't race.
+//
+// Test seed (src/db/seed-test.ts) sets up both placeholders to share
+// every collision target with the merge target (bob):
+//   - both are members of Bryggeriet (where bob is also a member),
+//   - both are registered as workers at Vårpub 2026 (where bob is also
+//     registered),
+//   - both hold an active ticket to Höstpub (the partial-unique-index
+//     conflict materialises after the first merge transfers the
+//     first ticket to bob),
+//   - both carry a `pub_worker` education (where bob already has one).
+//
+// Two placeholders with legacy_mappings oldUserId=99 and oldUserId=97.
+// Mapping 98 is pre-completed (used by hide-migrate-button.spec.ts),
+// so we only have two unclaimed mappings to drain.
 
 import { expect, test } from "@playwright/test";
 import { login, TEST_USER_EMAILS } from "../helpers/auth";

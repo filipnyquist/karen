@@ -420,13 +420,40 @@ async function executeMerge(
     // this, a failed merge silently grants verified=true to the attacker
     // while returning HTTP 500 to the caller.
     return await db.transaction(async (tx) => {
-        // 1. Reassign worker registrations
+        // 1. Reassign worker registrations.
+        //
+        // The unique index (event_id, user_id) protects against a user
+        // signing up twice for the same event, so a naive
+        //   UPDATE worker_registrations SET userId = realUserId WHERE userId = placeholderId
+        // unique-violates whenever the real user is *already* registered
+        // for an event the placeholder is also on (or when two
+        // placeholders being merged sequentially share an event).
+        //
+        // Fix: drop the placeholder rows that would conflict first,
+        // then reassign the rest. The subselect is on the real user's
+        // current registrations, scoped to this tx so concurrent merges
+        // of the same real user can't race.
+        await tx
+            .delete(workerRegistrations)
+            .where(
+                and(
+                    eq(workerRegistrations.userId, placeholderId),
+                    inArray(
+                        workerRegistrations.eventId,
+                        tx
+                            .select({ eventId: workerRegistrations.eventId })
+                            .from(workerRegistrations)
+                            .where(eq(workerRegistrations.userId, realUserId)),
+                    ),
+                ),
+            );
         await tx
             .update(workerRegistrations)
             .set({ userId: realUserId })
             .where(eq(workerRegistrations.userId, placeholderId));
 
-        // 2. Reassign comments
+        // 2. Reassign comments (PK is `id`; no composite constraint on
+        // userId, so a naive UPDATE is safe here.)
         await tx
             .update(comments)
             .set({ userId: realUserId })
@@ -471,13 +498,65 @@ async function executeMerge(
             .set({ reporterId: realUserId })
             .where(eq(guestRegistrations.reporterId, placeholderId));
 
-        // 5. Reassign tickets
+        // 5. Reassign tickets.
+        //
+        // The partial unique index (user_id, event_id) WHERE is_active
+        // forbids a user from holding two active tickets for the same
+        // event, so a naive
+        //   UPDATE tickets SET userId = realUserId WHERE userId = placeholderId
+        // unique-violates whenever the real user already has an active
+        // ticket for an event the placeholder also holds an active
+        // ticket for. Same fix shape as pub_team_members: drop the
+        // conflicting placeholder rows first, then reassign. The
+        // subselect mirrors the partial-index WHERE so we don't drop
+        // an inactive ticket by accident.
+        await tx.delete(tickets).where(
+            and(
+                eq(tickets.userId, placeholderId),
+                eq(tickets.isActive, true),
+                inArray(
+                    tickets.eventId,
+                    tx
+                        .select({ eventId: tickets.eventId })
+                        .from(tickets)
+                        .where(
+                            and(
+                                eq(tickets.userId, realUserId),
+                                eq(tickets.isActive, true),
+                            ),
+                        ),
+                ),
+            ),
+        );
         await tx
             .update(tickets)
             .set({ userId: realUserId })
             .where(eq(tickets.userId, placeholderId));
 
-        // 6. Reassign educations
+        // 6. Reassign educations.
+        //
+        // The composite PK (user_id, education_type_id) protects
+        // against storing the same education twice for a user, so a
+        // naive
+        //   UPDATE user_educations SET userId = realUserId WHERE userId = placeholderId
+        // PK-violates whenever both placeholders (or placeholder + real
+        // user) have a row for the same education_type_id. Same fix
+        // shape as pub_team_members: drop the conflicting placeholder
+        // rows first, then reassign.
+        await tx.delete(userEducations).where(
+            and(
+                eq(userEducations.userId, placeholderId),
+                inArray(
+                    userEducations.educationTypeId,
+                    tx
+                        .select({
+                            educationTypeId: userEducations.educationTypeId,
+                        })
+                        .from(userEducations)
+                        .where(eq(userEducations.userId, realUserId)),
+                ),
+            ),
+        );
         await tx
             .update(userEducations)
             .set({ userId: realUserId })

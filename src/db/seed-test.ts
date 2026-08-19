@@ -22,6 +22,7 @@ import {
     pubTeamMembers,
     pubTeams,
     reports,
+    tickets,
     userEducations,
     users,
     workerRegistrations,
@@ -500,6 +501,30 @@ async function seed() {
             );
         if (!dup) await db.insert(userEducations).values(ev);
     }
+
+    // Legacy placeholders each carry a `pub_worker` education. Bob
+    // (the multi-merge target in the e2e) also has one, so a naive
+    // UPDATE on user_educations during executeMerge would PK-trip on
+    // (user_id, education_type_id). The delete-then-update path in
+    // migration.ts handles this; this row is the fixture that
+    // actually exercises it.
+    for (const placeholderId of [legacyUser.id, legacyUser2.id]) {
+        const [dup] = await db
+            .select()
+            .from(userEducations)
+            .where(
+                sql`${userEducations.userId} = ${placeholderId} AND ${userEducations.educationTypeId} = ${pubWorkerEd.id}`,
+            );
+        if (!dup) {
+            await db.insert(userEducations).values({
+                userId: placeholderId,
+                educationTypeId: pubWorkerEd.id,
+                completedAt: new Date("2024-09-01"),
+                expiresAt: null,
+                verifiedBy: admin.id,
+            });
+        }
+    }
     console.log("    ✓ Educations assigned");
 
     // ── Pub Teams ──
@@ -802,6 +827,11 @@ async function seed() {
     // Legacy user registered on past events (data to be transferred on migration)
     await registerWorker(pub1.id, legacyUser.id, false);
     await registerWorker(pub3.id, legacyUser.id, false);
+    // legacyUser2 also at pub1 — bob (the multi-merge target) is at
+    // pub1 too, so a naive UPDATE would unique-violate on
+    // (event_id, user_id). Same fix shape as the pub_team_members
+    // collision exercised by the e2e spec.
+    await registerWorker(pub1.id, legacyUser2.id, false);
     console.log("    ✓ Workers registered");
 
     // ── Guest Registrations ──
@@ -927,6 +957,33 @@ async function seed() {
     await createComment(pub1.id, legacyUser.id, "Great old-school pub night!");
     await createComment(pub3.id, legacyUser.id, "Good times from the old days");
     console.log("    ✓ Comments created");
+
+    // ── Legacy placeholder tickets ──
+    //
+    // Both placeholders hold an active ticket to pub3. After the
+    // first merge legacyUser → bob, bob ends up with legacyUser's
+    // (bob.id, pub3.id, isActive=true) row. The second merge
+    // legacyUser2 → bob would PK-violate on the partial unique
+    // index (user_id, event_id) WHERE is_active=true. The
+    // delete-then-update path in migration.ts drops the conflicting
+    // placeholder row first; this fixture is what exercises it.
+    for (const placeholderId of [legacyUser.id, legacyUser2.id]) {
+        const [dup] = await db
+            .select()
+            .from(tickets)
+            .where(
+                sql`${tickets.userId} = ${placeholderId} AND ${tickets.eventId} = ${pub3.id}`,
+            );
+        if (!dup) {
+            await db.insert(tickets).values({
+                userId: placeholderId,
+                eventId: pub3.id,
+                token: randomBytes(24).toString("hex"),
+                isActive: true,
+            });
+        }
+    }
+    console.log("    ✓ Legacy placeholder tickets issued");
 
     console.log("\n✅ Test data seeded successfully!");
     console.log(
