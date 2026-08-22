@@ -117,6 +117,89 @@ describe("buildScoreboardText", () => {
         expect(headerLine?.length ?? 0).toBeGreaterThan(50);
     });
 
+    test("surfaces full name as its own column so 'NAMELESS' nicknames are still identifiable", () => {
+        // Real-name roster: real full names render in the Full name column
+        // even when the nickname is the placeholder "NAMELESS".
+        const out = buildScoreboardText(
+            [
+                {
+                    userId: "u1",
+                    name: "Karl Johansson",
+                    nickname: "NAMELESS",
+                    email: "kalle@karen.se",
+                    points: 4,
+                },
+                {
+                    userId: "u2",
+                    name: "Anna Svensson",
+                    nickname: "NAMELESS",
+                    email: "anna@karen.se",
+                    points: 2,
+                },
+            ],
+            fall2025,
+            1,
+            fixedGeneratedAt,
+        );
+        // The header has the new column.
+        expect(out).toContain("Full name");
+        // The real names appear in the output (the admin's whole reason
+        // for this column).
+        expect(out).toContain("Karl Johansson");
+        expect(out).toContain("Anna Svensson");
+        // Nicknames still show in the Name column too.
+        expect(out).toContain("NAMELESS");
+    });
+
+    test("full name column is empty when users.name is null, even if nickname exists", () => {
+        const out = buildScoreboardText(
+            [
+                {
+                    userId: "u1",
+                    name: null,
+                    nickname: "Erre",
+                    email: "erik@karen.se",
+                    points: 1,
+                },
+            ],
+            fall2025,
+            1,
+            fixedGeneratedAt,
+        );
+        // Header still includes the column.
+        expect(out).toContain("Full name");
+        // Header and dashes share the same length — the blank
+        // Full-name slot under the data row lines up under the
+        // header text. The data row itself can be shorter since
+        // the points column is unpadded.
+        const lines = out.split("\n");
+        const headerIdx = lines.findIndex(
+            (l) => l.startsWith("Rank") && l.includes("Name"),
+        );
+        expect(headerIdx).toBeGreaterThan(0);
+        const headerLine = lines[headerIdx];
+        const dashesLine = lines[headerIdx + 1];
+        const dataLine = lines[headerIdx + 2];
+        expect(dashesLine.length).toBe(headerLine.length);
+        // The nickname renders after the rank column. Find where
+        // "Name" ends in the header — the nickname should land at
+        // the same offset in the data row.
+        const nameColEnd = headerLine.indexOf("Name") + "Name".length;
+        const beforeNickname = dataLine.slice(0, nameColEnd);
+        // Skip past the rank + "  " separator (rank is 4 wide).
+        const nicknameStart = 4 + 2;
+        const nicknameAndBefore = beforeNickname.slice(nicknameStart);
+        expect(nicknameAndBefore).toBe("Erre");
+        // And the email follows the (blank) Full-name slot.
+        const emailColStart = headerLine.indexOf("Email");
+        expect(
+            dataLine
+                .slice(emailColStart)
+                .trimStart()
+                .startsWith("erik@karen.se"),
+        ).toBe(true);
+    });
+
     test("total workers footer reflects row count", () => {
         const rows = Array.from({ length: 7 }, (_, i) => ({
             userId: `u${i}`,
