@@ -57,16 +57,35 @@ export function buildScoreboardText(
     const displayName = (r: ScoreboardRow) =>
         r.nickname?.trim() || r.name?.trim() || "(no name)";
 
+    // Full name: the raw `name` field, surfaced as its own column so
+    // the dinner committee can address invitations to the user's
+    // real name even when only a nickname is set on the account.
+    const fullName = (r: ScoreboardRow) => r.name?.trim() || "";
+
     // Column widths derived from the actual data so the table stays
-    // tight even with short names.
-    const nameWidth = Math.max(4, ...rows.map((r) => displayName(r).length));
-    const emailWidth = Math.max(5, ...rows.map((r) => r.email.length));
-    const rankWidth = Math.max(4, String(rows.length).length);
+    // tight even with short names. Each width is also padded to fit
+    // the header text — otherwise a wide header (e.g. "Full name")
+    // breaks the dashes-and-row alignment under it.
+    const nameWidth = Math.max(
+        "Name".length,
+        ...rows.map((r) => displayName(r).length),
+    );
+    const fullNameWidth = Math.max(
+        "Full name".length,
+        ...rows.map((r) => fullName(r).length),
+    );
+    const emailWidth = Math.max(
+        "Email".length,
+        ...rows.map((r) => r.email.length),
+    );
+    const rankWidth = Math.max("Rank".length, String(rows.length).length);
 
     lines.push(
         "Rank".padEnd(rankWidth) +
             "  " +
             "Name".padEnd(nameWidth) +
+            "  " +
+            "Full name".padEnd(fullNameWidth) +
             "  " +
             "Email".padEnd(emailWidth) +
             "  " +
@@ -76,6 +95,8 @@ export function buildScoreboardText(
         "-".repeat(rankWidth) +
             "  " +
             "-".repeat(nameWidth) +
+            "  " +
+            "-".repeat(fullNameWidth) +
             "  " +
             "-".repeat(emailWidth) +
             "  " +
@@ -88,6 +109,8 @@ export function buildScoreboardText(
             rank.padEnd(rankWidth) +
                 "  " +
                 displayName(r).padEnd(nameWidth) +
+                "  " +
+                fullName(r).padEnd(fullNameWidth) +
                 "  " +
                 r.email.padEnd(emailWidth) +
                 "  " +
