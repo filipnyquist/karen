@@ -51,14 +51,12 @@ test.describe("Event List", () => {
     });
 });
 
-// Regression test for the mobile-only bug: rows used to be clickable
-// only via a `click` listener, which iOS Safari can suppress when the
-// finger drifts slightly during a tap inside the horizontally-scrollable
-// table (it classifies the gesture as a scroll and never delivers click).
-// BaseLayout now also listens for `touchend` (which is not suppressed),
-// with a short deduplication window against the synthetic `click` that
-// follows. This test exercises a real touch sequence on a phone-shaped
-// viewport to lock the fix in.
+// Regression test: rows are clickable on a phone viewport. iOS Safari
+// can suppress `click` on `<tr>` taps inside a horizontally-scrollable
+// container when the finger drifts slightly during the tap (it
+// classifies the gesture as the start of a scroll and never delivers
+// click). This test exercises a real touch sequence on a phone-shaped
+// viewport to make sure the row click still navigates there.
 test.describe("Event List (mobile)", () => {
     test.use({ ...devices["iPhone 13"] });
 
@@ -71,9 +69,6 @@ test.describe("Event List (mobile)", () => {
             .first();
         await expect(row).toBeVisible();
         const id = await row.getAttribute("data-event-id");
-        // tap() sends a real touch event sequence (touchstart → touchend →
-        // click); closer to a finger tap than locator.click() which
-        // synthesizes a mouse click and would not exercise touchend.
         await row.tap();
         await expect(page).toHaveURL(new RegExp(`/event/${id}`));
     });
