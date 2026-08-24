@@ -109,12 +109,12 @@ const layoutScript = `(function(){
   // emitting elements with [data-action="..."]; see LanguageSwitcher and
   // event/list for examples.
   //
-  // We listen for BOTH `touchend` (mobile) and `click` (desktop) because
-  // iOS Safari can suppress `click` on `<tr>` taps inside a scrollable
+  // We listen for BOTH touchend (mobile) and click (desktop) because
+  // iOS Safari can suppress click on <tr> taps inside a scrollable
   // container when the user's finger drifts slightly — it classifies the
-  // gesture as the start of a scroll and never fires `click`. `touchend`
-  // is not suppressed that way. Modern mobile browsers fire BOTH events
-  // for a single tap, so we de-duplicate via a short timestamp window.
+  // gesture as the start of a scroll and never fires click. touchend is
+  // not suppressed that way. Modern mobile browsers fire both events for
+  // a single tap, so we de-duplicate via a short timestamp window.
   function dispatchAction(target) {
     const action = target.getAttribute('data-action');
     if (action === 'set-lang') {
