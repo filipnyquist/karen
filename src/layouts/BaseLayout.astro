@@ -105,12 +105,17 @@ const layoutScript = `(function(){
   };
 
   // Inline event handlers (onclick="...") are blocked by CSP, so route every
-  // global click through this delegator. Pages & components opt in by
+  // global action through these delegators. Pages & components opt in by
   // emitting elements with [data-action="..."]; see LanguageSwitcher and
   // event/list for examples.
-  document.body.addEventListener('click', (e) => {
-    const target = e.target instanceof Element ? e.target.closest('[data-action]') : null;
-    if (!target) return;
+  //
+  // We listen for BOTH `touchend` (mobile) and `click` (desktop) because
+  // iOS Safari can suppress `click` on `<tr>` taps inside a scrollable
+  // container when the user's finger drifts slightly — it classifies the
+  // gesture as the start of a scroll and never fires `click`. `touchend`
+  // is not suppressed that way. Modern mobile browsers fire BOTH events
+  // for a single tap, so we de-duplicate via a short timestamp window.
+  function dispatchAction(target) {
     const action = target.getAttribute('data-action');
     if (action === 'set-lang') {
       const lang = target.getAttribute('data-lang');
@@ -122,6 +127,21 @@ const layoutScript = `(function(){
       const id = target.getAttribute('data-event-id');
       if (id) window.location.href = '/event/' + id;
     }
+  }
+  let lastTouchEndAt = 0;
+  document.body.addEventListener('touchend', (e) => {
+    const target = e.target instanceof Element ? e.target.closest('[data-action]') : null;
+    if (!target) return;
+    lastTouchEndAt = Date.now();
+    dispatchAction(target);
+  }, { passive: true });
+  document.body.addEventListener('click', (e) => {
+    const target = e.target instanceof Element ? e.target.closest('[data-action]') : null;
+    if (!target) return;
+    // Skip the synthetic click that follows a touchend (mobile browsers fire
+    // both for one tap); without this guard we'd dispatch twice.
+    if (Date.now() - lastTouchEndAt < 700) return;
+    dispatchAction(target);
   });
 })();`;
 
