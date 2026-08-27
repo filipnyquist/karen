@@ -81,13 +81,24 @@ const httpServer = http.createServer((req, res) => {
 
 const wss = new WebSocketServer({ noServer: true });
 
+// Important contract for every branch below: wss.handleUpgrade must be
+// invoked synchronously — i.e. before any await — so the 101 Switching
+// Protocols response is written back to the socket inside the same tick
+// the 'upgrade' event fires. If we await first (which the previous
+// version of this file did), a reverse proxy in front of Bun may time
+// out waiting for the handshake and reply 502 to the browser. This is
+// what broke /ws/report/ in production behind BTH's proxy. Doing the
+// awaitable work (auth, DB snapshot load) inside the handleUpgrade
+// callback keeps the handshake immediate while still letting us reject
+// bad sessions with a clean WebSocket close.
 httpServer.on("upgrade", (req, socket, head) => {
+    const url = new URL(req.url ?? "/", `http://${req.headers.host}`);
+
     // /ws/event/:eventId — anonymous-friendly "event <X> changed"
     // notifications. No role gate because the event detail page is
     // already partially public-readable via SSR; the frames are
     // themselves harmless (no PII).
-    if (req.url?.startsWith("/ws/event/")) {
-        const url = new URL(req.url, `http://${req.headers.host}`);
+    if (url.pathname.startsWith("/ws/event/")) {
         const eventId = url.pathname.replace("/ws/event/", "").split("/")[0];
         if (!eventId) {
             socket.write("HTTP/1.1 400 Bad Request\r\n\r\n");
@@ -122,53 +133,65 @@ httpServer.on("upgrade", (req, socket, head) => {
         return;
     }
 
-    if (!req.url?.startsWith("/ws/report/")) {
-        socket.destroy();
-        return;
-    }
+    // /ws/report/:eventId — authenticated, role-gated Yjs sync.
+    if (url.pathname.startsWith("/ws/report/")) {
+        const eventId = url.pathname.replace("/ws/report/", "").split("/")[0];
+        if (!eventId) {
+            socket.write("HTTP/1.1 400 Bad Request\r\n\r\n");
+            socket.destroy();
+            return;
+        }
 
-    const url = new URL(req.url, `http://${req.headers.host}`);
-    const eventId = url.pathname.replace("/ws/report/", "").split("/")[0];
-    if (!eventId) {
-        socket.write("HTTP/1.1 400 Bad Request\r\n\r\n");
-        socket.destroy();
-        return;
-    }
+        // Re-wrap the upgrade request's headers into a Fetch Request so
+        // the auth helpers can read the session cookie. The 'cookie'
+        // header on the upgrade request carries whatever the reverse
+        // proxy forwarded to us — typically a single string.
+        const headers = new Headers();
+        for (const [key, value] of Object.entries(req.headers)) {
+            if (typeof value === "string") headers.set(key, value);
+            else if (Array.isArray(value)) headers.set(key, value.join(", "));
+        }
+        const fakeReq = new Request(`http://${req.headers.host}${req.url}`, {
+            headers,
+        });
 
-    // Build a Request for auth helpers
-    const headers = new Headers();
-    for (const [key, value] of Object.entries(req.headers)) {
-        if (typeof value === "string") headers.set(key, value);
-        else if (Array.isArray(value)) headers.set(key, value.join(", "));
-    }
-    const fakeReq = new Request(`http://${req.headers.host}${req.url}`, {
-        headers,
-    });
+        // handleUpgrade is called synchronously here — see the contract
+        // note above. Auth + role check + initial-snapshot load happen
+        // inside the callback. On failure we close the upgraded socket
+        // with 1008 ("policy violation") instead of writing raw HTTP
+        // 401/403 lines, which the proxy can no longer frame correctly
+        // once the upgrade event has fired.
+        wss.handleUpgrade(req, socket, head, async (ws) => {
+            try {
+                const user = await loadSessionUser(fakeReq);
+                if (!user) {
+                    try {
+                        ws.close(1008, "unauthorized");
+                    } catch {
+                        /* ignore */
+                    }
+                    return;
+                }
 
-    (async () => {
-        try {
-            const user = await loadSessionUser(fakeReq);
-            if (!user) {
-                socket.write("HTTP/1.1 401 Unauthorized\r\n\r\n");
-                socket.destroy();
-                return;
-            }
+                const authorized = await isResponsibleOrAdmin(
+                    user.id,
+                    user.role,
+                    eventId,
+                );
+                if (!authorized) {
+                    try {
+                        ws.close(1008, "forbidden");
+                    } catch {
+                        /* ignore */
+                    }
+                    return;
+                }
 
-            const authorized = await isResponsibleOrAdmin(
-                user.id,
-                user.role,
-                eventId,
-            );
-            if (!authorized) {
-                socket.write("HTTP/1.1 403 Forbidden\r\n\r\n");
-                socket.destroy();
-                return;
-            }
+                const docId = `report:${eventId}`;
+                // Ensure the in-memory doc exists before joining a
+                // room; ensureLoaded below waits for the DB snapshot.
+                getYDoc(docId, eventId);
 
-            const docId = `report:${eventId}`;
-            getYDoc(docId, eventId);
-
-            wss.handleUpgrade(req, socket, head, async (ws) => {
                 // Deterministic color per user so peers recognise
                 // them across reloads.
                 const COLORS = [
@@ -200,10 +223,11 @@ httpServer.on("upgrade", (req, socket, head) => {
 
                 const doc = getYDoc(docId, eventId);
                 // Wait for the initial DB snapshot to land in the doc.
-                // Without this, the first client after a restart gets an
-                // empty snapshot because the loadDocInto async hasn't
-                // completed yet.
+                // Without this, the first client after a restart gets
+                // an empty snapshot because the loadDocInto async
+                // hasn't completed yet.
                 await ensureLoaded(docId);
+                if (ws.readyState !== WebSocket.OPEN) return;
                 const update = Y.encodeStateAsUpdate(doc);
                 // Prefix with 0x00 (FRAME_DOC_UPDATE) so the client can
                 // route it as a doc update regardless of the first byte
@@ -216,12 +240,23 @@ httpServer.on("upgrade", (req, socket, head) => {
                 ws.send(frame);
 
                 wss.emit("connection", ws, req);
-            });
-        } catch (e) {
-            console.error("WS upgrade error:", e);
-            socket.destroy();
-        }
-    })();
+            } catch (e) {
+                console.error("WS callback error:", e);
+                try {
+                    ws.close(1011, "internal error");
+                } catch {
+                    /* ignore */
+                }
+            }
+        });
+        return;
+    }
+
+    // Unknown upgrade target — surface a real 404 so proxy logs and
+    // operator dashboards don't mask misconfiguration as a downstream
+    // 500 from Astro.
+    socket.write("HTTP/1.1 404 Not Found\r\n\r\n");
+    socket.destroy();
 });
 
 wss.on("connection", (ws) => {
