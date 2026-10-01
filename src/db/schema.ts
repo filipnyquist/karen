@@ -3,6 +3,7 @@
 import { relations, sql } from "drizzle-orm";
 import {
     boolean,
+    check,
     customType,
     date,
     index,
@@ -257,19 +258,28 @@ export const guestRegistrations = pgTable("guest_registrations", {
 
 // ─── Comments ───
 
-export const comments = pgTable("comments", {
-    id: uuid("id").defaultRandom().primaryKey(),
-    eventId: uuid("event_id")
-        .notNull()
-        .references(() => events.id, { onDelete: "cascade" }),
-    userId: uuid("user_id")
-        .notNull()
-        .references(() => users.id, { onDelete: "cascade" }),
-    content: text("content").notNull(),
-    createdAt: timestamp("created_at", { withTimezone: true })
-        .defaultNow()
-        .notNull(),
-});
+export const comments = pgTable(
+    "comments",
+    {
+        id: uuid("id").defaultRandom().primaryKey(),
+        eventId: uuid("event_id")
+            .notNull()
+            .references(() => events.id, { onDelete: "cascade" }),
+        userId: uuid("user_id")
+            .notNull()
+            .references(() => users.id, { onDelete: "cascade" }),
+        content: text("content").notNull(),
+        createdAt: timestamp("created_at", { withTimezone: true })
+            .defaultNow()
+            .notNull(),
+    },
+    (table) => [
+        check(
+            "comments_content_length_chk",
+            sql`char_length(${table.content}) <= 500`,
+        ),
+    ],
+);
 
 // ─── Reports ───
 

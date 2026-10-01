@@ -36,6 +36,8 @@ function isoToLocal(iso: string, lang: string): string {
     });
 }
 
+const MAX_COMMENT_LENGTH = 500;
+
 export default function EventCommentsPanel({
     eventId,
     initialComments,
@@ -109,8 +111,11 @@ export default function EventCommentsPanel({
             await fetchComments();
         } catch (err) {
             const errMsg = err instanceof Error ? err.message : String(err);
+            const localized = errMsg.includes("too long")
+                ? (t["event.commentTooLong"] ?? errMsg)
+                : errMsg;
 
-            setError(errMsg ?? t["common.networkError"] ?? "Network error");
+            setError(localized ?? t["common.networkError"] ?? "Network error");
         } finally {
             setPosting(false);
         }
@@ -163,6 +168,7 @@ export default function EventCommentsPanel({
                                 setDraft((e.target as HTMLInputElement).value)
                             }
                             required
+                            maxLength={500}
                             placeholder={
                                 t["event.writeComment"] ?? "Write a comment…"
                             }
@@ -176,6 +182,13 @@ export default function EventCommentsPanel({
                             {t["common.save"]}
                         </button>
                     </div>
+                    <p
+                        class="mt-1 text-xs text-gray-500 dark:text-gray-400 text-right"
+                        aria-live="polite"
+                    >
+                        {draft.length}/{MAX_COMMENT_LENGTH}{" "}
+                        {t["event.characters"] ?? "characters"}
+                    </p>
                 </form>
             )}
 

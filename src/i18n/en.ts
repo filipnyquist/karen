@@ -153,6 +153,8 @@ export default {
         guests: "Guests",
         comments: "Comments",
         writeComment: "Write a comment",
+        commentTooLong: "Comment is too long. Please shorten it.",
+        characters: "characters",
         report: "Report",
         locked: "Locked",
         lockEvent: "Lock event",

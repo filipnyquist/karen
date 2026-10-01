@@ -550,7 +550,7 @@ async function main() {
         await db.insert(comments).values({
             eventId: newEventId,
             userId: placeholderId,
-            content: c.content || "",
+            content: (c.content || "").slice(0, 500),
             createdAt: c.time ? new Date(c.time) : new Date(),
         });
         commentsImported++;

@@ -50,6 +50,13 @@
             "when": 1787128431070,
             "tag": "0006_aspiring_loki",
             "breakpoints": true
+        },
+        {
+            "idx": 7,
+            "version": "7",
+            "when": 1790850412740,
+            "tag": "0007_tiresome_corsair",
+            "breakpoints": true
         }
     ]
 }

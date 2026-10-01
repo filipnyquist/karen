@@ -24,6 +24,15 @@ export const commentRoutes = new Elysia({ prefix: "/comments" })
                 );
             }
 
+            const MAX_COMMENT_LENGTH = 500;
+            if (body.content.trim().length > MAX_COMMENT_LENGTH) {
+                throw new AppError(
+                    `Comment is too long (max ${MAX_COMMENT_LENGTH} characters)`,
+                    400,
+                    "COMMENT_TOO_LONG",
+                );
+            }
+
             const [comment] = await db
                 .insert(comments)
                 .values({
@@ -38,8 +47,8 @@ export const commentRoutes = new Elysia({ prefix: "/comments" })
         },
         {
             body: t.Object({
-                eventId: t.String(),
-                content: t.String(),
+                eventId: t.String({ format: "uuid" }),
+                content: t.String({ maxLength: 10_000 }),
             }),
         },
     )

@@ -155,6 +155,8 @@ export default {
         guests: "Gäster",
         comments: "Kommentarer",
         writeComment: "Skriv en kommentar",
+        commentTooLong: "Kommentaren är för lång. Förkorta den.",
+        characters: "tecken",
         report: "Rapport",
         locked: "Låst",
         lockEvent: "Lås evenemang",
