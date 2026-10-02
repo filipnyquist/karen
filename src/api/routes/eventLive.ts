@@ -145,6 +145,7 @@ export const eventLiveRoutes = new Elysia({ prefix: "/events" })
                     userId: comments.userId,
                     userName: users.name,
                     userNickname: users.nickname,
+                    userProfilePic: users.profilePic,
                 })
                 .from(comments)
                 .innerJoin(users, eq(comments.userId, users.id))

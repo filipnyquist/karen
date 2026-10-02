@@ -15,6 +15,7 @@ export interface Comment {
     userId: string;
     userName: string | null;
     userNickname: string | null;
+    userProfilePic: string | null;
 }
 
 interface Props {
@@ -212,11 +213,28 @@ export default function EventCommentsPanel({
                                 id={`comment-${c.id}`}
                                 key={c.id}
                             >
-                                <div class="w-8 h-8 rounded-full bg-gray-200 dark:bg-gray-700 flex items-center justify-center text-xs font-medium text-gray-600 dark:text-gray-300 shrink-0">
-                                    {(c.userNickname || c.userName || "?")
-                                        .charAt(0)
-                                        .toUpperCase()}
-                                </div>
+                                <a
+                                    href={`/profile/${c.userId}`}
+                                    class="shrink-0"
+                                >
+                                    {c.userProfilePic ? (
+                                        <img
+                                            src={c.userProfilePic}
+                                            alt=""
+                                            class="w-8 h-8 rounded-full object-cover"
+                                        />
+                                    ) : (
+                                        <div class="w-8 h-8 rounded-full bg-gray-200 dark:bg-gray-700 flex items-center justify-center text-xs font-medium text-gray-600 dark:text-gray-300 shrink-0">
+                                            {(
+                                                c.userNickname?.trim() ||
+                                                c.userName?.trim() ||
+                                                "?"
+                                            )
+                                                .charAt(0)
+                                                .toUpperCase()}
+                                        </div>
+                                    )}
+                                </a>
                                 <div class="min-w-0 flex-1">
                                     <div class="flex items-baseline gap-2 flex-wrap">
                                         <a

@@ -143,6 +143,7 @@ const eventComments = await db
     userId: comments.userId,
     userName: users.name,
     userNickname: users.nickname,
+    profilePic: users.profilePic,
   })
   .from(comments)
   .innerJoin(users, eq(comments.userId, users.id))
@@ -168,6 +169,7 @@ const initialComments: Comment[] = eventComments.map((c) => ({
         ? c.userName
         : (anonymizeName(c.userName, false) as string | null),
     userNickname: c.userNickname,
+    userProfilePic: c.profilePic,
 }));
 
 // Check if current user is registered

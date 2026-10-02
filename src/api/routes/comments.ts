@@ -67,6 +67,7 @@ export const commentRoutes = new Elysia({ prefix: "/comments" })
                         id: users.id,
                         name: users.name,
                         nickname: users.nickname,
+                        profilePic: users.profilePic,
                     },
                 })
                 .from(comments)
