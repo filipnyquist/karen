@@ -424,6 +424,27 @@ export default function GuestManager({
                                         {t["guest.addAGuest"] || "Add a Guest"}
                                     </h4>
 
+                                    {/* Membership policy reminder — shown to everyone who can add guests. */}
+                                    <div class="rounded-md border border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-900/30 p-3 flex items-start gap-2 text-sm text-blue-700 dark:text-blue-300">
+                                        <svg
+                                            class="w-5 h-5 flex-shrink-0 text-blue-600 dark:text-blue-400 mt-0.5"
+                                            fill="none"
+                                            stroke="currentColor"
+                                            viewBox="0 0 24 24"
+                                        >
+                                            <path
+                                                stroke-linecap="round"
+                                                stroke-linejoin="round"
+                                                stroke-width="2"
+                                                d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+                                            />
+                                        </svg>
+                                        <p>
+                                            {t["guest.bskMembershipNote"] ||
+                                                "Do note that you need to have a BSK membership to put people on the guest list."}
+                                        </p>
+                                    </div>
+
                                     {/* Own DOB — asked once, then collapsed to
                                         a one-line strip so the form stays
                                         three fields wide forever after. */}

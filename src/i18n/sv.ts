@@ -347,6 +347,8 @@ export default {
         ownSsnChange: "ändra",
         ownSsnRequired: "Registrera ditt eget födelsedatum ovan först.",
         ownSsnFailed: "Kunde inte spara ditt födelsedatum",
+        bskMembershipNote:
+            "Observera att du måste vara BSK-medlem för att din gästläggning ska gälla.",
     },
     team: {
         title: "Publag",

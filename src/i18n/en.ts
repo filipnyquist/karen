@@ -343,6 +343,8 @@ export default {
         ownSsnChange: "change",
         ownSsnRequired: "Register your date of birth above first.",
         ownSsnFailed: "Failed to save your date of birth",
+        bskMembershipNote:
+            "Do note that you need to have a BSK membership to put people on the guest list.",
     },
     team: {
         title: "Pub Teams",
