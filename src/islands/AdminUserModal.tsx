@@ -262,11 +262,11 @@ export default function AdminUserModal({
         clearMsgs();
         if (!data) return;
         try {
-            const res = await fetch("/api/admin/verify", {
-                method: "POST",
+            const res = await fetch(`/api/admin/users/${userId}`, {
+                method: "PUT",
                 headers: { "Content-Type": "application/json" },
                 credentials: "same-origin",
-                body: JSON.stringify({ userId }),
+                body: JSON.stringify({ verified: !data.user.verified }),
             });
             if (!res.ok) {
                 const d = await res.json();
